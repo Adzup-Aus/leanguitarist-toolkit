@@ -94,7 +94,7 @@ Each session updates its own row when it ends.
 
 | # | Status | Session | Pull request | Preview tested | Notes |
 |---|---|---|---|---|---|
-| F0 | Not started | | | | |
+| F0 | Done, merged 18 Nov 2026 and live | F0 build session, 18 Nov 2026 | [#2](https://github.com/Adzup-Aus/leanguitarist-toolkit/pull/2) | Yes: deploy-preview-2--leanguitar.netlify.app beside app.leanguitarist.com, signed out, at 375 px and 1280 px. Same scripted walk-through on both gave identical results on every tab, and every element on every tab had the same position, size, font and colour. Ticks, checklist and setlist kept after a reload. Live app checked after merge: loads, no errors, old v6 cache replaced by v7 | Files: `css/app.css`; `js/ops.js`, `data.js`, `core.js`, one file per tab, `main.js` (start-up), loaded in that order. `sw.js` now fetches same-origin `.js` and `.css` fresh when online (cached copy offline), so a later deploy reaches returning players without a cache bump; add every new js/css file to `ASSETS` in `sw.js`. `js/ops.js` keeps the error log and running-cost log in memory and the console only (`LGOps.errors`, `LGOps.costSummary()`, `LGOps.copyLog()`); Supabase calls in `core.js` already log to it; F1 sends them on. Found, not fixed (same on live): the Songbook has no button to open "Add your own song", and saved own songs are not listed in the Songbook (`openAddSong` and `openMy` in `js/songbook.js` are never reached from the screen); a later session should add both. The chord pop-up shows a "moveable/barre shape" note, not a diagram, for chords with no stored shape (for example G# after a capo or transpose); F5 (chord library) can cover these |
 | F1 | Waiting on Supabase setup | | | | |
 | F2 | Not started | | | | |
 | F3 | Not started | | | | |
