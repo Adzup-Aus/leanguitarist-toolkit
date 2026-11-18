@@ -1,12 +1,25 @@
 /* Core Chord Formula Toolkit - offline service worker */
 /* NOTE: bump CACHE on every deploy that changes a precached asset. */
-const CACHE = "ccf-toolkit-v6";
+const CACHE = "ccf-toolkit-v7";
 
-/* App shell. index.html is network-first (see below) so deploys reach
-   returning users immediately; these are the offline fallbacks. */
+/* App shell. index.html and the app's own scripts and styles are network-first
+   (see below) so deploys reach returning users immediately; these are the
+   offline fallbacks. Add every new css/ or js/ file here. */
 const ASSETS = [
   "./",
   "./index.html",
+  "./css/app.css",
+  "./js/ops.js",
+  "./js/data.js",
+  "./js/core.js",
+  "./js/chords.js",
+  "./js/songs.js",
+  "./js/songbook.js",
+  "./js/strum.js",
+  "./js/practice.js",
+  "./js/fingers.js",
+  "./js/ready.js",
+  "./js/main.js",
   "./manifest.webmanifest",
   "./icon-192.png",
   "./icon-512.png",
@@ -69,6 +82,14 @@ self.addEventListener("fetch", (e) => {
      deployed to index.html actually reaches people who already have the PWA. */
   if (req.mode === "navigate" || (sameOrigin && /\/(index\.html)?$/.test(url.pathname))) {
     e.respondWith(networkFirst(req));
+    return;
+  }
+
+  /* The app's own scripts and styles: network-first too, so a fix in any js/ or
+     css/ file reaches returning users on their next load, as it did when all the
+     code sat inside index.html. Offline, the cached copy is used. */
+  if (sameOrigin && /\.(js|css)$/.test(url.pathname) && !/\/sw\.js$/.test(url.pathname)) {
+    e.respondWith(fetch(req).then((res) => putInCache(req, res)).catch(() => caches.match(req)));
     return;
   }
 
