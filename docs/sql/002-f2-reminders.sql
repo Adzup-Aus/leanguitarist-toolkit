@@ -138,6 +138,8 @@ create table if not exists private.app_secrets (
   created_at timestamptz not null default now()
 );
 revoke all on private.app_secrets from public, anon, authenticated;
+-- No policies: only the table's owner (the security definer functions below) reads it.
+alter table private.app_secrets enable row level security;
 insert into private.app_secrets (name, value)
   values ('reminders_off_link', extensions.gen_random_bytes(32))
   on conflict (name) do nothing;
