@@ -108,7 +108,7 @@ Each session updates its own row when it ends.
 | F11 | Not started | | | | |
 | F12 | Not started | | | | |
 
-## 7. Setup outside the code (done by the coordinating session)
+## 7. Setup outside the code (each job in a session of its own, started by the main session)
 
 1. Resume the `leanguitar` Supabase project. Supabase's free plan allows only 2 active
    projects per owner, so the Insight Emails project was moved into our own Postgres server
@@ -127,13 +127,32 @@ Each session updates its own row when it ends.
   preview for the pull request; the session tests there, never on the live app.
 - **Small steps, saved as it goes.** It commits after each working step, so nothing depends
   on a long conversation.
-- **Tested, then merged.** It runs its "done means" test on the preview, records the result in
-  the tracker, and merges once the test passes.
-- **It stops when the feature is done.** Anything else it finds goes into the tracker's Notes
-  for a later session. If a session gets long before its feature is done, it writes where it
-  got to in the tracker and hands over to a fresh session.
-- **One at a time.** The coordinating session starts the next feature only after the previous
-  one is merged and checked on the live app, because the features share the same files.
+- **Tested, checked, reviewed, then merged.** It runs its "done means" test on the preview and
+  records the result in the tracker, then the outside check by two other models (playbook
+  section 7a), then Cliff's review on the preview. It merges only after all three.
+- **Every report ends with a preview link and Cliff's review** (Cliff, 20 November 2026). Each
+  stage session (F0, F1, ...) ends every report with the preview link for its change (the pull
+  request's deploy preview), the live link once merged, and a short list of steps to try. Cliff
+  reviews the user experience on the preview before the stage is merged and goes live, and his
+  feedback is acted on before the merge. The session stays open, without the (F) title mark,
+  until he has reviewed.
+- **Issues found at the end of a stage go to a connected session** (Cliff, 20 November 2026).
+  A new issue with the stage's feature, from its tests, the outside check's notes or Cliff's
+  review, is fixed in a session the stage session starts as its own linked session, which
+  reports back to the stage session. It is not fixed inside the stage session, and not parked
+  in the tracker's Notes for a later stage.
+- **It stops when the feature is done.** Anything unrelated it finds goes into the tracker's
+  Notes for a later session. If a session gets long before its feature is done, it writes where
+  it got to in the tracker and hands over to a fresh session.
+- **One at a time.** The main session starts the next feature only after the previous one is
+  merged and checked on the live app, because the features share the same files.
+- **Every session reports up the chain** (Cliff, 20 November 2026). A fix session reports to
+  its stage session; each stage session reports to the build's main session. Cliff watches
+  only the main session.
+- **The main session only orchestrates** (Cliff, 20 November 2026). It starts sessions, checks
+  what they report (pull request, preview, live app), brings Cliff decisions and keeps the plan
+  page current. It does no build or setup work itself: Supabase, n8n, GHL, Resend and legal
+  checks each go to a session of their own.
 
 ## Settled questions
 
