@@ -113,7 +113,7 @@ async function doSync(){
       opsErr("save progress",res.error); return false;
     }
     if(!res.data||!res.data.length) continue; /* another device saved first: read again */
-    syncBase=merged; LS.set(baseKey,merged);
+    syncBase=JSON.parse(JSON.stringify(merged)); LS.set(baseKey,merged); /* a copy: the live progress objects change as the player ticks */
     /* Keep anything ticked on this device while the save was on its way. */
     const now=gatherProgress();
     applyProgress(JSON.stringify(now)===JSON.stringify(snap) ? merged : mergeProgress3(snap, now, merged));
