@@ -84,9 +84,9 @@ Each row is one build session, done in order, one at a time. A session builds on
 | F12 | String-by-string chord check, and the drill counting changes by ear (beta) | Finds a muted string on a real guitar |
 | Later | Camera, as its own opt-in | After a privacy and legal check |
 
-Before anything in F1, F2, F4, F9, F10 or F11 goes live, the `adzup-legal` skill checks what
-players see or receive (sign-in emails, reminder emails, the privacy and consent wording, the
-privacy policy section), and Cliff approves the emails.
+While the app is free, features go live without the legal check (Cliff, 20 November 2026: no
+one is paying for it, keep building). The check runs before the app is charged for, and before
+any paid feature (F11) goes live.
 
 ## 6. Build tracker
 
@@ -95,7 +95,7 @@ Each session updates its own row when it ends.
 | # | Status | Session | Pull request | Preview tested | Notes |
 |---|---|---|---|---|---|
 | F0 | Done, merged 18 Nov 2026 and live | F0 build session, 18 Nov 2026 | [#2](https://github.com/Adzup-Aus/leanguitarist-toolkit/pull/2) | Yes: deploy-preview-2--leanguitar.netlify.app beside app.leanguitarist.com, signed out, at 375 px and 1280 px. Same scripted walk-through on both gave identical results on every tab, and every element on every tab had the same position, size, font and colour. Ticks, checklist and setlist kept after a reload. Live app checked after merge: loads, no errors, old v6 cache replaced by v7 | Files: `css/app.css`; `js/ops.js`, `data.js`, `core.js`, one file per tab, `main.js` (start-up), loaded in that order. `sw.js` now fetches same-origin `.js` and `.css` fresh when online (cached copy offline), so a later deploy reaches returning players without a cache bump; add every new js/css file to `ASSETS` in `sw.js`. `js/ops.js` keeps the error log and running-cost log in memory and the console only (`LGOps.errors`, `LGOps.costSummary()`, `LGOps.copyLog()`); Supabase calls in `core.js` already log to it; F1 sends them on. Found, not fixed (same on live): the Songbook has no button to open "Add your own song", and saved own songs are not listed in the Songbook (`openAddSong` and `openMy` in `js/songbook.js` are never reached from the screen); a later session should add both. The chord pop-up shows a "moveable/barre shape" note, not a diagram, for chords with no stored shape (for example G# after a capo or transpose); F5 (chord library) can cover these |
-| F1 | Waiting on Supabase setup | | | | |
+| F1 | Done, merged 20 Nov 2026 and live. No legal checks while the app is free (Cliff, 20 Nov 2026) | F1 build session, 20 Nov 2026 | [#4](https://github.com/Adzup-Aus/leanguitarist-toolkit/pull/4) | Yes, on commit a01fa7b: deploy-preview-4--leanguitar.netlify.app as device A and the deploy's own address as device B (separate storage), at 800 px and 375 px. Signed out works and keeps ticks after a reload. Test buyer f1-test@leanguitarist.com signed in on both: each showed "We saved what was on this phone" with its own counts, then both showed the same 6 of 21 days, 3 campfire skills and setlist song; a tick on B reached A when A's tab came back into view. Reload keeps the session; sign-out on A left B signed in. f1-nonbuyer@leanguitarist.com got the buyer-list note, was signed out and saved nothing. A brand-new player inserted their own `progress` row, so no new policy was needed. Round 2, commit dbfe968 (after round 1 of the outside check): a clean device shows the saved screen with zero counts; ticks saved at the same time on both devices both reach the account, including a forced write clash; an un-tick and a tick made just before sign-out reach the other device; a failed sign-out says so and stays signed in; the non-buyer note again. Round 3, commit 9600194: with sign-out failing, the non-buyer note and the purchase-check error screen still let the player carry on signed out, and the next start finishes the sign-out. After round 3, commit e17d336: two tabs on one address keep each other's ticks; a background session refresh after choosing to stay signed out does not turn syncing back on; two-device ticks, un-tick, sign-out and the non-buyer note all pass again. Commit 4f9c49c adds Cliff's wording (20 Nov 2026): the privacy line under the email box linking to leanguitarist.com/privacy-policy, and the recent-purchase and info@leanguitarist.com line on the non-buyer note; re-tested on the preview at 375 px and 800 px (two devices, un-tick, sign-out, non-buyer) | Files: `js/account.js` (all sign-in and sync, moved out of `core.js`), sign-in screens in the `#loginGate` overlay, `sw.js` cache v8. The sign-in screen shows by itself once (`lg_signin_seen`). Saving is a three-way merge with a compare-and-set on `updated_at`, so devices never overwrite each other and un-ticks carry across (the last agreed copy is kept per user in `lg_sync_base:<user id>`). Outside check round 1 (Adzup-Aus/leanguitarist-toolkit#4-F1-r1-246da10, US$0.38): Grok passed, GPT-6.2 blocking on 5 items; 4 fixed, 1 answered (test codes came from the admin endpoint, as the brief set). Round 2 (…-r2-b5f457a, US$0.12): Grok passed, GPT-6.2 blocking on 3; 2 fixed (failed sign-out handling), 1 answered (a deliberate un-tick carries to the other device, or no signed-in player could ever un-tick or Reset). Round 3 (…-r3-f1ba4a1, US$0.39): Grok passed, GPT-6.2 blocking on 2 (two open tabs could erase a tick; a session refresh could restart syncing after a failed sign-out); both fixed and tested after the round in e17d336, not yet re-checked because the 3 rounds are used. Round 4 (…-r4-b267f11, covering those fixes and Cliff's wording) was refused by the check job's 3-round cap, which hands the decision to Cliff; Cliff had already said to keep building and put F1 live without coming back to him (20 Nov 2026), so F1 was merged on the session's own tests. Total check cost US$0.89. Test evidence and answers: the shared notes folder, `F1-evidence.md`. Found, not fixed: (1) `progress` row level security does not require an `access` row, so a non-buyer calling the API directly could still save their own progress row (their data only); a later session could add that check to the policy. (2) Any email that asks for a code gets a Supabase account, buyer or not; a cleanup job could remove accounts with no `access` row. (3) The Practice tab still says "Your progress saves right here on this device, no login needed". (4) The error and cost logs (`js/ops.js`) are still in memory only; sending them to the internal side is not done yet |
 | F2 | Not started | | | | |
 | F3 | Not started | | | | |
 | F4 | Not started | | | | |
@@ -105,7 +105,7 @@ Each session updates its own row when it ends.
 | F8 | Not started | | | | |
 | F9 | Not started | | | | |
 | F10 | Not started | | | | |
-| F11 | Waiting on the review price | | | | |
+| F11 | Not started | | | | |
 | F12 | Not started | | | | |
 
 ## 7. Setup outside the code (done by the coordinating session)
@@ -128,17 +128,19 @@ Each session updates its own row when it ends.
 - **Small steps, saved as it goes.** It commits after each working step, so nothing depends
   on a long conversation.
 - **Tested, then merged.** It runs its "done means" test on the preview, records the result in
-  the tracker, and merges once the test passes. A step players see or receive also needs the
-  legal check and Cliff's yes first.
+  the tracker, and merges once the test passes.
 - **It stops when the feature is done.** Anything else it finds goes into the tracker's Notes
   for a later session. If a session gets long before its feature is done, it writes where it
   got to in the tracker and hands over to a fresh session.
 - **One at a time.** The coordinating session starts the next feature only after the previous
   one is merged and checked on the live app, because the features share the same files.
 
-## Needs confirmation
+## Settled questions
 
-- The teacher review price: US$19 in the offer test plan, US$47 in the buyer record's delivery
-  table (`Framework/Tracking/Buyer_Record.md` section 7b).
-- Whether App Pro (offer 9, a US$19 pre-sale) comes out of the paid offer test now that the
-  app is free this year.
+Nothing needs confirmation. Settled:
+- The teacher review price is US$47 a review (Cliff set it on 12 Nov 2026; row 451 in the
+  Baserow Offers list; the US$19 and US$39-a-month prices were dropped that day). F11 uses the
+  offer's checkout as it stands.
+- App Pro is out of the paid offer test (dropped 12 Nov 2026; its page is gone). The app is free
+  this year. Later it may be charged as an add-on, around US$5 a month (Cliff, 20 Nov 2026);
+  that decision comes after launch.
