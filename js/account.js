@@ -14,6 +14,11 @@ const SIGNIN_SEEN_KEY="lg_signin_seen";
 
 let sb=null, sbUser=null, accessOk=false, syncTimer=null, pendingEmail="";
 let sessionRun=null, sessionRunFor="", verifying=false, applying=false, lastPull=0;
+/* syncBase: the progress this tab last agreed with the account (kept per tab, so
+   another open tab moving on can never make this tab's older copy look like an
+   un-tick). optedOut: the player chose to carry on signed out after a sign-out
+   that could not finish; background session refreshes are then ignored. */
+let syncBase=null, syncBaseFor="", optedOut=false;
 
 /* Internal error and running-cost logs (js/ops.js). Players never see these. */
 function opsErr(task,e,ctx){ try{ if(window.LGOps) LGOps.logError(task,e,ctx); }catch(_){} }
@@ -78,6 +83,7 @@ async function flushSync(){
 async function doSync(){
   if(!sb||!sbUser||!accessOk) return false;
   const uid=sbUser.id, baseKey="lg_sync_base:"+uid;
+  if(syncBaseFor!==uid){ syncBase=LS.get(baseKey,null); syncBaseFor=uid; }
   lastPull=Date.now();
   for(let attempt=0; attempt<4; attempt++){
     opsCost("load progress");
@@ -89,7 +95,7 @@ async function doSync(){
     }catch(e){ opsErr("load progress",e); return false; }
     if(!sbUser||sbUser.id!==uid) return false;
     const snap=JSON.parse(JSON.stringify(gatherProgress()));
-    const merged=mergeProgress3(LS.get(baseKey,null), snap, (row&&row.data)||{});
+    const merged=mergeProgress3(syncBase, snap, (row&&row.data)||{});
     const stamp=new Date().toISOString();
     opsCost("save progress");
     let res;
@@ -107,7 +113,7 @@ async function doSync(){
       opsErr("save progress",res.error); return false;
     }
     if(!res.data||!res.data.length) continue; /* another device saved first: read again */
-    LS.set(baseKey,merged);
+    syncBase=merged; LS.set(baseKey,merged);
     /* Keep anything ticked on this device while the save was on its way. */
     const now=gatherProgress();
     applyProgress(JSON.stringify(now)===JSON.stringify(snap) ? merged : mergeProgress3(snap, now, merged));
@@ -153,13 +159,14 @@ async function localSignOut(force){
     let still=true;
     try{ const {data}=await sb.auth.getSession(); still=!!(data&&data.session); }catch(_){}
     if(still && !force){ renderAcctBtn(); return false; }
-    if(still){ clearSignedIn(); return false; }
+    if(still){ optedOut=true; clearSignedIn(); return false; }
   }
   clearSignedIn();
   return true;
 }
 function clearSignedIn(){
   if(syncTimer){ clearTimeout(syncTimer); syncTimer=null; }
+  syncBase=null; syncBaseFor="";
   sbUser=null; accessOk=false; sessionRun=null; sessionRunFor="";
   renderAcctBtn();
 }
@@ -186,6 +193,7 @@ function onAuthChange(event,user){
     if(event==="INITIAL_SESSION") maybeShowSigninOnce();
     return;
   }
+  if(optedOut && !verifying) return; /* stays signed out on this page */
   sbUser=user; renderAcctBtn();
   if(verifying) return; /* verifyCode() runs the session and shows the result */
   startSession(user).then(r=>{ if(r.status==="notbuyer") showSignin("notbuyer",r); });
@@ -326,7 +334,7 @@ async function verifyCode(){
   if(!code){ toast("Enter the code"); return; }
   if(!sb){ toast("Sign-in unavailable, please reload"); return; }
   const b=document.getElementById("siVerify"); if(b){ b.textContent="Checking..."; b.disabled=true; }
-  verifying=true;
+  verifying=true; optedOut=false;
   let session=null;
   try{ session=await verifyOtpToken(code); }
   catch(e){ verifying=false; toast(authErr(e,"Wrong or expired code")); if(b){ b.textContent="Sign in"; b.disabled=false; } return; }
