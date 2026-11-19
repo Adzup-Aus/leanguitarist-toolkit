@@ -30,12 +30,30 @@ function applyProgress(pr){ if(!pr)return;
   try{ LS.set("ccf_practice",practiceDone); LS.set("ccf_campfire",campfireDone); LS.set("ccf_setlist",setlist); LS.set("ccf_mysongs",mySongs); }
   finally{ applying=false; }
 }
-/* Two devices with different ticks keep both. */
-function mergeProgress(a,b){
-  const m={setlist:Array.from(new Set([...(a.setlist||[]),...(b.setlist||[])]))};
-  const _ms={}; [...(a.mysongs||[]),...(b.mysongs||[])].forEach(s=>{_ms[s.id]=s;}); m.mysongs=Object.values(_ms);
-  ["practice","campfire"].forEach(k=>{const o={}; const src=Object.assign({},a[k],b[k]);
-    Object.keys(src).forEach(key=>{o[key]=!!((a[k]&&a[k][key])||(b[k]&&b[k][key]));}); m[k]=o;});
+/* Three-way merge. base = the progress this device last agreed with the account.
+   What this device changed since then (a tick, an untick, a Reset, a song added,
+   edited or removed) wins; everything else comes from the account. With no base
+   yet (first sign-in on this device) every tick, setlist song and own song on
+   either side is kept, so two devices with different ticks keep both. */
+function mergeProgress3(base,local,remote){
+  base=base||{}; local=local||{}; remote=remote||{};
+  const m={};
+  ["practice","campfire"].forEach(k=>{
+    const b=base[k]||{}, l=local[k]||{}, r=remote[k]||{}, o={};
+    new Set([...Object.keys(b),...Object.keys(l),...Object.keys(r)]).forEach(key=>{
+      const lv=!!l[key], bv=!!b[key];
+      if(lv!==bv ? lv : !!r[key]) o[key]=true;
+    });
+    m[k]=o;
+  });
+  const bl=base.setlist||[], ll=local.setlist||[], rl=remote.setlist||[];
+  const added=ll.filter(x=>!bl.includes(x)), removed=bl.filter(x=>!ll.includes(x));
+  m.setlist=[...rl.filter(x=>!removed.includes(x)), ...added.filter(x=>!rl.includes(x))];
+  const byId=arr=>{const o={}; (arr||[]).forEach(x=>{ if(x&&x.id!=null) o[x.id]=x; }); return o;};
+  const bs=byId(base.mysongs), ls=byId(local.mysongs), rs=byId(remote.mysongs), out={};
+  Object.keys(rs).forEach(id=>{ if(!(id in bs && !(id in ls))) out[id]=rs[id]; });
+  Object.keys(ls).forEach(id=>{ if(!(id in bs) || JSON.stringify(ls[id])!==JSON.stringify(bs[id])) out[id]=ls[id]; });
+  m.mysongs=Object.values(out);
   return m;
 }
 function countProgress(p){
@@ -45,28 +63,59 @@ function countProgress(p){
 function reRenderAll(){ renderSongs(); renderFilterChips(); renderPractice(); renderCampfire(); renderSongbook(); }
 /* Called by LS.set (core.js) after every local save. */
 function onLocalWrite(k){ if(SYNC_ON && sbUser && accessOk && !applying) scheduleSync(); }
-function scheduleSync(){ if(syncTimer)clearTimeout(syncTimer); syncTimer=setTimeout(()=>{ syncTimer=null; pushProgress(); },1200); }
-async function pushProgress(){
-  if(!sb||!sbUser||!accessOk) return false;
-  opsCost("save progress");
-  try{
-    const {error}=await sb.from("progress").upsert({user_id:sbUser.id, data:gatherProgress(), updated_at:new Date().toISOString()},{onConflict:"user_id"});
-    if(error) throw error;
-    return true;
-  }catch(e){ opsErr("save progress",e); return false; }
+function scheduleSync(){ if(syncTimer)clearTimeout(syncTimer); syncTimer=setTimeout(()=>{ syncTimer=null; syncNow(); },1200); }
+/* One sync at a time on this device. */
+let syncChain=Promise.resolve(true);
+function syncNow(){ const run=syncChain.then(doSync,doSync); syncChain=run.catch(()=>false); return run; }
+/* Sends any save that is still waiting, and waits for one already running. */
+async function flushSync(){
+  if(syncTimer){ clearTimeout(syncTimer); syncTimer=null; return await syncNow(); }
+  return await syncChain;
 }
-/* Reads the account's saved progress, merges this device's into it, shows the
-   result and saves it back. A failed read never overwrites the account. */
-async function pullAndMerge(){
-  if(!sb||!sbUser) return false;
-  opsCost("load progress"); lastPull=Date.now();
-  try{
-    const {data,error}=await sb.from("progress").select("data").eq("user_id",sbUser.id).maybeSingle();
-    if(error) throw error;
-    const remote=(data&&data.data)?data.data:{};
-    applyProgress(mergeProgress(remote, gatherProgress())); reRenderAll();
-    return await pushProgress();
-  }catch(e){ opsErr("load progress",e); return false; }
+/* Reads the account row, merges this device into it and writes it back only if
+   no other device wrote in between (the row's updated_at must still match);
+   otherwise reads again. A failed read never overwrites the account. */
+async function doSync(){
+  if(!sb||!sbUser||!accessOk) return false;
+  const uid=sbUser.id, baseKey="lg_sync_base:"+uid;
+  lastPull=Date.now();
+  for(let attempt=0; attempt<4; attempt++){
+    opsCost("load progress");
+    let row;
+    try{
+      const {data,error}=await sb.from("progress").select("data,updated_at").eq("user_id",uid).maybeSingle();
+      if(error) throw error;
+      row=data;
+    }catch(e){ opsErr("load progress",e); return false; }
+    if(!sbUser||sbUser.id!==uid) return false;
+    const snap=JSON.parse(JSON.stringify(gatherProgress()));
+    const merged=mergeProgress3(LS.get(baseKey,null), snap, (row&&row.data)||{});
+    const stamp=new Date().toISOString();
+    opsCost("save progress");
+    let res;
+    try{
+      if(row){
+        let q=sb.from("progress").update({data:merged, updated_at:stamp}).eq("user_id",uid);
+        q=row.updated_at==null ? q.is("updated_at",null) : q.eq("updated_at",row.updated_at);
+        res=await q.select("user_id");
+      } else {
+        res=await sb.from("progress").insert({user_id:uid, data:merged, updated_at:stamp}).select("user_id");
+      }
+    }catch(e){ res={error:e}; }
+    if(res.error){
+      if(!row && res.error.code==="23505") continue; /* another device made the row first */
+      opsErr("save progress",res.error); return false;
+    }
+    if(!res.data||!res.data.length) continue; /* another device saved first: read again */
+    LS.set(baseKey,merged);
+    /* Keep anything ticked on this device while the save was on its way. */
+    const now=gatherProgress();
+    applyProgress(JSON.stringify(now)===JSON.stringify(snap) ? merged : mergeProgress3(snap, now, merged));
+    reRenderAll();
+    return true;
+  }
+  opsErr("save progress",new Error("Another device kept saving at the same moment; will try again on the next change"));
+  return false;
 }
 
 /* ============ SESSION: buyer check, then sync ============ */
@@ -84,7 +133,7 @@ function startSession(user){
     if(res.error){ opsErr("sign-in: buyer check",res.error); return {status:"error",email}; }
     if(!res.data){ await localSignOut(); return {status:"notbuyer",email}; }
     accessOk=true;
-    const ok=await pullAndMerge();
+    const ok=await syncNow();
     if(!ok){ accessOk=false; return {status:"error",email}; }
     renderAcctBtn();
     return {status:"ok",email,before};
@@ -93,11 +142,20 @@ function startSession(user){
   run.then(r=>{ if(r.status!=="ok" && sessionRun===run){ sessionRun=null; sessionRunFor=""; } });
   return run;
 }
+/* Signs out this device only. Returns false if the stored session is still there. */
 async function localSignOut(){
+  let error=null;
+  try{ if(sb){ const r=await sb.auth.signOut({scope:"local"}); error=r&&r.error; } }catch(e){ error=e; }
+  if(error){
+    opsErr("sign out",error);
+    let still=true;
+    try{ const {data}=await sb.auth.getSession(); still=!!(data&&data.session); }catch(_){}
+    if(still){ renderAcctBtn(); return false; }
+  }
   if(syncTimer){ clearTimeout(syncTimer); syncTimer=null; }
   sbUser=null; accessOk=false; sessionRun=null; sessionRunFor="";
-  try{ if(sb) await sb.auth.signOut({scope:"local"}); }catch(e){ opsErr("sign out",e); }
   renderAcctBtn();
+  return true;
 }
 
 function initSupabase(){
@@ -130,11 +188,11 @@ function onAuthChange(event,user){
 function onVisible(){
   if(!sb||!sbUser) return;
   if(document.visibilityState==="hidden"){
-    if(syncTimer){ clearTimeout(syncTimer); syncTimer=null; pushProgress(); }
+    if(syncTimer){ clearTimeout(syncTimer); syncTimer=null; syncNow(); }
     return;
   }
   if(Date.now()-lastPull<20000) return;
-  if(accessOk) pullAndMerge();
+  if(accessOk) syncNow();
   else if(!sessionRun && !verifying) startSession(sbUser).then(r=>{ if(r.status==="notbuyer") showSignin("notbuyer",r); });
 }
 
@@ -181,18 +239,15 @@ function showSignin(screen,info){
       '<button type="button" class="silink" onclick="showSignin(\'signin\')">Use a different email</button>';
   } else if(screen==="moved"){
     const c=info.before||{days:0,skills:0,setlist:0,mysongs:0};
-    const any=c.days||c.skills||c.setlist||c.mysongs;
     const total=CAMPFIRE.reduce((n,grp)=>n+grp.items.length,0);
     h='<div class="k">Signed in as '+em+'</div>'+
-      (any?'<h2 class="gateh" id="siTitle">We saved what was on this phone</h2>'+
-        '<p class="gatep">It\'s now in your account and on any device you sign in on.</p>'+
-        '<div class="silist">'+
-        '<div><span>Practice days ticked</span><b>'+c.days+' of 21</b></div>'+
-        '<div><span>Campfire skills ticked</span><b>'+c.skills+' of '+total+'</b></div>'+
-        '<div><span>Songs in your setlist</span><b>'+c.setlist+'</b></div>'+
-        '<div><span>Your own song sheets</span><b>'+c.mysongs+'</b></div></div>'
-      :'<h2 class="gateh" id="siTitle">You\'re signed in</h2>'+
-        '<p class="gatep">Your progress now saves to your account and shows on any device you sign in on.</p>')+
+      '<h2 class="gateh" id="siTitle">We saved what was on this phone</h2>'+
+      '<p class="gatep">It\'s now in your account and on any device you sign in on.</p>'+
+      '<div class="silist">'+
+      '<div><span>Practice days ticked</span><b>'+c.days+' of 21</b></div>'+
+      '<div><span>Campfire skills ticked</span><b>'+c.skills+' of '+total+'</b></div>'+
+      '<div><span>Songs in your setlist</span><b>'+c.setlist+'</b></div>'+
+      '<div><span>Your own song sheets</span><b>'+c.mysongs+'</b></div></div>'+
       siBtn("Back to the app","closeSignin()");
   } else if(screen==="notbuyer"){
     h='<div class="k">For Lean Guitarist students</div>'+
@@ -285,5 +340,13 @@ async function retryCheck(){
   verifying=true;
   try{ await showSessionResult(sbUser); }finally{ verifying=false; }
 }
-async function signOutAndClose(){ await localSignOut(); closeSignin(); }
-async function signOut(){ await localSignOut(); closeSignin(); toast("Signed out. Your progress stays on this device"); }
+async function signOutAndClose(){
+  if(!(await localSignOut())){ toast("Couldn't sign out. Please try again"); return; }
+  closeSignin();
+}
+async function signOut(){
+  const saved=await flushSync();
+  if(!(await localSignOut())){ toast("Couldn't sign out. Please try again"); return; }
+  closeSignin();
+  toast(saved?"Signed out. Your progress stays on this device":"Signed out. Your latest changes are only on this device");
+}
