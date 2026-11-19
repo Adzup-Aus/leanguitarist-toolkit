@@ -33,7 +33,8 @@ create table if not exists public.reminders (
 
 alter table public.reminders enable row level security;
 
--- Players: read their own row, and write only the settings and the practised time.
+-- Players on the buyer list (public.access): read their own row, and write only the
+-- settings and the practised time.
 -- (user_id is in the update list because an upsert names every column it sends;
 -- the policies keep it equal to the player's own id.)
 revoke all on public.reminders from anon, authenticated;
@@ -49,13 +50,13 @@ drop policy if exists "reminders: insert own row" on public.reminders;
 drop policy if exists "reminders: update own row" on public.reminders;
 drop policy if exists "reminders: delete own row" on public.reminders;
 create policy "reminders: read own row" on public.reminders
-  for select to authenticated using (user_id = (select auth.uid()));
+  for select to authenticated using (user_id = (select auth.uid()) and exists (select 1 from public.access a where a.email = lower((select auth.jwt()) ->> 'email')));
 create policy "reminders: insert own row" on public.reminders
-  for insert to authenticated with check (user_id = (select auth.uid()));
+  for insert to authenticated with check (user_id = (select auth.uid()) and exists (select 1 from public.access a where a.email = lower((select auth.jwt()) ->> 'email')));
 create policy "reminders: update own row" on public.reminders
-  for update to authenticated using (user_id = (select auth.uid())) with check (user_id = (select auth.uid()));
+  for update to authenticated using (user_id = (select auth.uid()) and exists (select 1 from public.access a where a.email = lower((select auth.jwt()) ->> 'email'))) with check (user_id = (select auth.uid()) and exists (select 1 from public.access a where a.email = lower((select auth.jwt()) ->> 'email')));
 create policy "reminders: delete own row" on public.reminders
-  for delete to authenticated using (user_id = (select auth.uid()));
+  for delete to authenticated using (user_id = (select auth.uid()) and exists (select 1 from public.access a where a.email = lower((select auth.jwt()) ->> 'email')));
 
 -- Server clock for the practised time and the settings time; reject an unknown time zone.
 create or replace function public.reminders_before_write()
@@ -85,12 +86,15 @@ create trigger reminders_before_write before insert or update on public.reminder
   for each row execute function public.reminders_before_write();
 
 -- Finds every reminder due now in its player's own time zone and marks it handled
--- for that local day in the same statement, so two runs can never both send one.
--- Due means: switched on; today (in the player's zone) is one of the chosen days;
--- the chosen time has passed within the last window_minutes; the settings were
--- saved before that time (a time saved after it has passed starts tomorrow);
--- nothing was handled for this local day yet; and the email is still on the buyer list.
--- outcome 'skipped': the player asked to skip and practised earlier that local day.
+-- for its local day. Due means: switched on; the reminder's local day (today, or
+-- yesterday for a late-night time whose window runs past midnight) is one of the
+-- chosen days; the chosen time on that day has passed within the last
+-- window_minutes; the settings were saved before that time (a time saved after it
+-- has passed starts the next chosen day); nothing was handled for that local day
+-- yet; and the email is still on the buyer list.
+-- outcome 'skipped': the player asked to skip and practised earlier on that local day.
+-- Two runs at once cannot both claim a reminder: the update re-checks
+-- last_handled_on on the locked row, so the second run updates nothing.
 create or replace function public.claim_due_reminders(window_minutes integer default 45)
 returns table (
   user_id uuid, email text, first_name text, local_date date, remind_at time,
@@ -103,28 +107,34 @@ as $$
 #variable_conflict use_column
 begin
   return query
-  with due as (
-    select r.user_id as uid, l.ld,
+  with cand as (
+    select r.user_id as uid, c.ld, ((c.ld + r.remind_at) at time zone r.time_zone) as slot
+      from public.reminders r
+      cross join lateral (select (now() at time zone r.time_zone)::date as today) t
+      cross join lateral (values (t.today), (t.today - 1)) c(ld)
+     where r.enabled
+  ), due as (
+    select distinct on (c.uid) c.uid, c.ld,
       case when r.skip_if_practised and r.last_practised_at is not null
-             and (r.last_practised_at at time zone r.time_zone)::date = l.ld
+             and (r.last_practised_at at time zone r.time_zone)::date = c.ld
            then 'skipped' else 'sending' end as oc
-    from public.reminders r
-    cross join lateral (select (now() at time zone r.time_zone)::date as ld) l
-    cross join lateral (select ((l.ld + r.remind_at) at time zone r.time_zone) as slot) s
-    join auth.users u on u.id = r.user_id
-    join public.access a on a.email = lower(u.email)
-    where r.enabled
-      and extract(isodow from l.ld)::smallint = any (r.days)
-      and s.slot <= now()
-      and s.slot > now() - make_interval(mins => greatest(window_minutes, 1))
-      and r.settings_updated_at <= s.slot
-      and (r.last_handled_on is null or r.last_handled_on < l.ld)
-    for update of r skip locked
+      from cand c
+      join public.reminders r on r.user_id = c.uid
+      join auth.users u on u.id = r.user_id
+      join public.access a on a.email = lower(u.email)
+     where extract(isodow from c.ld)::smallint = any (r.days)
+       and c.slot <= now()
+       and c.slot > now() - make_interval(mins => greatest(window_minutes, 1))
+       and r.settings_updated_at <= c.slot
+       and (r.last_handled_on is null or r.last_handled_on < c.ld)
+     order by c.uid, c.ld desc
   ), upd as (
     update public.reminders r
        set last_handled_on = d.ld, last_outcome = d.oc, last_handled_at = now()
       from due d
      where r.user_id = d.uid
+       and r.enabled
+       and (r.last_handled_on is null or r.last_handled_on < d.ld)
     returning r.user_id, r.remind_at, r.time_zone, d.ld, d.oc
   )
   select upd.user_id, lower(u.email)::text, nullif(trim(a.first_name), '')::text, upd.ld,
