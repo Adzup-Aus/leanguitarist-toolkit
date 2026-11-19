@@ -239,6 +239,7 @@ function showSignin(screen,info){
       '<p class="gatep">Pop in the email you bought with. We\'ll send a 6-digit code. No password to remember.</p>'+
       '<form onsubmit="sendCode();return false">'+
       '<input id="siEmail" class="search" type="email" autocomplete="email" inputmode="email" placeholder="you@email.com" aria-label="Email" value="'+em+'">'+
+      '<p class="sismall siprivacy">We use your email to sign you in and save your progress. See our <a href="https://leanguitarist.com/privacy-policy" target="_blank" rel="noopener">Privacy policy</a>.</p>'+
       siBtn("Send me a code","", "", "siSend")+'</form>'+
       siBtn("Keep using it without signing in","keepWithout()","ghost")+
       '<p class="sismall">Without signing in, your progress stays on this device only.</p>';
@@ -267,6 +268,7 @@ function showSignin(screen,info){
     h='<div class="k">For Lean Guitarist students</div>'+
       '<h2 class="gateh" id="siTitle">This email isn\'t on our buyer list</h2>'+
       '<p class="gatep">We couldn\'t find a Lean Guitarist purchase for <b>'+em+'</b>. If you bought with a different email, try that one.</p>'+
+      '<p class="gatep">If you bought recently, wait an hour and try again. If it still doesn\'t work, contact us at info@leanguitarist.com.</p>'+
       siBtn("Try another email","showSignin('signin')")+
       '<a class="btn ghost sibtn" href="https://leanguitarist.com" target="_blank" rel="noopener">Visit leanguitarist.com</a>'+
       siBtn("Keep using it without signing in","keepWithout()","ghost")+
