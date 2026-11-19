@@ -284,6 +284,7 @@ function showSignin(screen,info){
       '<h2 class="gateh" id="siTitle">Your progress is saved</h2>'+
       '<p class="gatep">Signed in as <b>'+esc(String((sbUser&&sbUser.email)||""))+'</b>. Your practice tracker, campfire checklist, setlist and own songs save to your account and show on every device you sign in on.</p>'+
       siBtn("Back to the app","closeSignin()")+
+      siBtn("Practice reminder by email","openReminders()","ghost")+
       siBtn("Sign out","signOut()","ghost");
   }
   b.innerHTML=h;

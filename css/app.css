@@ -201,3 +201,25 @@ nav button.on{color:var(--red)}
 .sbpop .card h3{font-size:26px}
 .sbpop svg{width:120px;height:auto;margin:6px 0}
 .sbnote{font-size:12px;color:var(--muted);line-height:1.5;background:var(--soft);border:1px solid var(--line);border-radius:10px;padding:10px;margin-top:10px}
+/* F2: practice reminders (screen in the #loginGate overlay, card on the Practice tab) */
+.gate .rmchips{flex-wrap:wrap;justify-content:center;overflow:visible;padding:4px 0 2px}
+.gate .rmlbl{font-size:12.5px;font-weight:700;color:var(--ink);margin:12px 0 0;text-align:left}
+.gate .rmrow{display:flex;align-items:center;justify-content:space-between;gap:12px;text-align:left;font-size:14px;border:1px solid var(--line);border-radius:12px;padding:11px 12px;margin:0 0 10px}
+.gate .rmbody .rmrow{margin-top:14px}
+.gate .rmbody.off{opacity:.45}
+.gate .rmsw{width:44px;height:26px;border-radius:999px;border:none;background:#c9c2b8;position:relative;flex:0 0 auto;padding:0}
+.gate .rmsw::after{content:"";position:absolute;top:3px;left:3px;width:20px;height:20px;border-radius:50%;background:#fff;transition:left .15s}
+.gate .rmsw[aria-checked="true"]{background:var(--green)}
+.gate .rmsw[aria-checked="true"]::after{left:21px}
+.gate .rmsw:focus-visible,.gate .chip:focus-visible,.gate .rmother:focus-within{outline:3px solid var(--blue);outline-offset:2px}
+.gate .rmother{display:inline-flex;align-items:center;gap:6px}
+.gate .rmother input{border:none;background:transparent;font:inherit;color:inherit;padding:0;margin:0;width:auto;min-width:84px}
+.gate .rmmail{text-align:left;background:var(--soft);border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin:4px 0 8px}
+.gate .rmmail .rmlbl{margin:0 0 4px;color:var(--muted)}
+.gate .rmmail p{margin:0 0 3px;font-size:13px;line-height:1.45}
+.gate .rmmail .rmmut{color:var(--muted)}
+.gate .rmnote{text-align:left;margin:0 0 14px}
+.rmcard{display:flex;align-items:center;gap:12px;width:100%;text-align:left;background:#fff;border:1px solid var(--line);border-radius:14px;padding:13px 14px;margin:0 0 12px;color:var(--ink)}
+.rmcard svg{color:var(--red);flex:0 0 auto}
+.rmcard b{display:block;font-size:14.5px}
+.rmcard small{display:block;color:var(--muted);font-size:12.5px;margin-top:2px}
