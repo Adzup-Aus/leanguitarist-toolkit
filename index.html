@@ -21,7 +21,7 @@
 <header><div class="wrap">
   <div class="logo">G</div>
   <div><h1>Core Chord Formula</h1><p>YOUR PLAY-ANYTHING TOOLKIT</p></div>
-  <button id="acctBtn" class="acctbtn" onclick="openAcct()" aria-label="Save progress / account"><svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 12a5 5 0 1 0-5-5 5 5 0 0 0 5 5zm0 2c-4.4 0-9 2.2-9 5v1h18v-1c0-2.8-4.6-5-9-5z"/></svg></button>
+  <button id="acctBtn" class="acctbtn" onclick="openAcct()" aria-label="Sign in to save your progress" style="display:none"><svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 12a5 5 0 1 0-5-5 5 5 0 0 0 5 5zm0 2c-4.4 0-9 2.2-9 5v1h18v-1c0-2.8-4.6-5-9-5z"/></svg></button>
 </div></header>
 
 <main>
@@ -133,24 +133,12 @@
 
 <nav id="nav"></nav>
 <div class="gate" id="loginGate">
-  <div class="gatecard">
+  <div class="gatecard" role="dialog" aria-modal="true" aria-labelledby="siTitle">
     <div class="gatelogo">G</div>
-    <div class="gatetag">CORE CHORD FORMULA</div>
-    <h2 class="gateh">Your toolkit awaits</h2>
-    <p class="gatep">Sign in to open it. Pop in your email and we'll send a code. No password to remember.</p>
-    <div id="gateBody"></div>
+    <div id="siBody"></div>
   </div>
 </div>
 <div class="toast" id="toast"></div>
-<div class="modal" id="acctModal">
-  <div class="sheet">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-      <h3 style="font-size:20px">Your progress</h3>
-      <button class="iconbtn" style="width:34px;height:34px" onclick="closeAcct()" aria-label="Close">&#10005;</button>
-    </div>
-    <div id="acctBody"></div>
-  </div>
-</div>
 
 <script src="js/ops.js"></script>
 <script src="js/data.js"></script>
@@ -162,6 +150,7 @@
 <script src="js/practice.js"></script>
 <script src="js/fingers.js"></script>
 <script src="js/ready.js"></script>
+<script src="js/account.js"></script>
 <script src="js/main.js"></script>
 </body>
 </html>
