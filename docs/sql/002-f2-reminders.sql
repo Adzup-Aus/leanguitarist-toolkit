@@ -72,7 +72,7 @@ create policy "reminders: delete own row" on public.reminders
 -- offline or interrupted is sent later with its own time); it is kept within the
 -- last 24 hours, never in the future and never earlier than the time already
 -- saved. When it moves to a new local day, the old one is kept in
--- prev_practised_at. The settings time is the server clock. An unknown time zone
+-- prev_practised_at (also when an older practice from an earlier day arrives late). The settings time is the server clock. An unknown time zone
 -- is refused.
 create or replace function public.reminders_before_write()
 returns trigger
@@ -96,6 +96,14 @@ begin
     new.last_practised_at := greatest(least(new.last_practised_at, now()), now() - interval '24 hours');
     if old_at is not null then
       if new.last_practised_at < old_at then
+        -- an older practice that arrives late (another device, a retry): keep the
+        -- newer one, but remember it as the previous day's practice when it falls
+        -- on an earlier local day and is newer than the one kept there
+        if (new.last_practised_at at time zone new.time_zone)::date
+           < (old_at at time zone new.time_zone)::date
+           and (old.prev_practised_at is null or new.last_practised_at > old.prev_practised_at) then
+          new.prev_practised_at := new.last_practised_at;
+        end if;
         new.last_practised_at := old_at;
       elsif (new.last_practised_at at time zone new.time_zone)::date
             > (old_at at time zone new.time_zone)::date then

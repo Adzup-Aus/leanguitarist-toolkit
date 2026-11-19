@@ -146,8 +146,8 @@ async function rmSave(){
 /* ============ "PRACTISED TODAY" ============ */
 /* Called on a tick (not an un-tick) and when the practice timer starts. The time
    of the practice is kept on this device first (per account), then sent at once;
-   if the page closes or the network drops before it lands, it is sent with its
-   own time the next time this player's session starts. The server keeps it
+   if the network drops or the page closes before it lands, it is sent with its
+   own time later (see rmRetryLater, and on this player's next session start). The server keeps it
    within the last 24 hours and never moves it backwards. */
 function rmPendingKey(uid){ return "lg_rm_practice:"+uid; }
 function notePractised(){
@@ -156,6 +156,17 @@ function notePractised(){
   LS.set(rmPendingKey(uid),at);
   rmFlushPractice();
 }
+let rmRetryTimer=null, rmRetryWait=0;
+/* A practice time that could not be sent is tried again when the connection
+   comes back, when the app comes back into view, and on a timer (30 seconds,
+   doubling up to 10 minutes) while the same player stays signed in. */
+function rmRetryLater(){
+  if(rmRetryTimer) return;
+  rmRetryWait=Math.min(rmRetryWait ? rmRetryWait*2 : 30000, 600000);
+  rmRetryTimer=setTimeout(()=>{ rmRetryTimer=null; rmFlushPractice(); }, rmRetryWait);
+}
+window.addEventListener("online",()=>rmFlushPractice());
+document.addEventListener("visibilitychange",()=>{ if(document.visibilityState==="visible") rmFlushPractice(); });
 async function rmFlushPractice(){
   if(!rmSignedIn()||rmPracticeBusy) return;
   const uid=sbUser.id, key=rmPendingKey(uid), at=LS.get(key,null);
@@ -166,7 +177,8 @@ async function rmFlushPractice(){
     const {error}=await sb.from("reminders").upsert({user_id:uid, last_practised_at:at},{onConflict:"user_id"});
     if(error) throw error;
     if(LS.get(key,null)===at){ try{ localStorage.removeItem(key); }catch(_){} }
-  }catch(e){ opsErr("reminders: practised",e); }
+    rmRetryWait=0; if(rmRetryTimer){ clearTimeout(rmRetryTimer); rmRetryTimer=null; }
+  }catch(e){ opsErr("reminders: practised",e); rmRetryLater(); }
   finally{ rmPracticeBusy=false; }
   /* A practice that came in while this one was on its way. */
   const next=LS.get(key,null);
