@@ -166,6 +166,7 @@ nav button.on{color:var(--red)}
 .gate .k{color:var(--red);font-weight:700;font-size:11px;letter-spacing:.11em;text-transform:uppercase}
 .gate .sibtn{width:100%;justify-content:center;margin-bottom:10px;text-decoration:none}
 .gate .sicode{text-align:center;font-size:22px;font-weight:700;letter-spacing:.35em}
+.gate .sicode::placeholder{letter-spacing:normal;font-size:15px;font-weight:400}
 .gate .sismall{font-size:12px;color:var(--muted);margin:4px 0 0;line-height:1.45}
 .gate .silink{border:none;background:none;color:var(--blue);font-size:13px;font-weight:600;text-decoration:underline;padding:6px}
 .gate .silist{text-align:left;border:1px solid var(--line);border-radius:12px;padding:4px 12px;margin:0 0 14px}
