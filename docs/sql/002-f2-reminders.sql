@@ -6,7 +6,8 @@
 -- (each player only their own row). The n8n job "LEA112 | App - practice
 -- reminders (every 15 min)" calls public.claim_due_reminders() with the server
 -- key every 15 minutes and writes back what happened with
--- public.finish_reminder().
+-- public.finish_reminder(). Its "Turn off these reminders" webhook calls
+-- public.turn_off_reminders().
 
 create table if not exists public.reminders (
   user_id uuid primary key references auth.users(id) on delete cascade,
@@ -40,6 +41,9 @@ create table if not exists public.reminders (
 -- Added after the first version of the table (round 2 of the outside check).
 alter table public.reminders add column if not exists prev_practised_at timestamptz;
 alter table public.reminders add column if not exists saved boolean not null default false;
+-- Added with the F2 fixes: how many times the job has tried to email this local
+-- day's reminder (a failed send is retried on the next runs, at most 3 tries).
+alter table public.reminders add column if not exists send_tries smallint not null default 0;
 
 alter table public.reminders enable row level security;
 
@@ -122,6 +126,59 @@ drop trigger if exists reminders_before_write on public.reminders;
 create trigger reminders_before_write before insert or update on public.reminders
   for each row execute function public.reminders_before_write();
 
+-- The "Turn off these reminders" link in each email carries a signed token per
+-- player: "<user id>.<HMAC-SHA256 of the user id>", signed with a random secret
+-- the database makes for itself and keeps in the private schema (not reachable
+-- through the API). Nobody types or pastes a key.
+create schema if not exists private;
+revoke all on schema private from public, anon, authenticated;
+create table if not exists private.app_secrets (
+  name text primary key,
+  value bytea not null,
+  created_at timestamptz not null default now()
+);
+revoke all on private.app_secrets from public, anon, authenticated;
+insert into private.app_secrets (name, value)
+  values ('reminders_off_link', extensions.gen_random_bytes(32))
+  on conflict (name) do nothing;
+
+create or replace function public.reminders_off_token(p_user_id uuid)
+returns text
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select p_user_id::text || '.' || translate(rtrim(encode(
+           extensions.hmac(convert_to('reminders-off:' || p_user_id::text, 'UTF8'), s.value, 'sha256'),
+           'base64'), '='), '+/', '-_')
+    from private.app_secrets s
+   where s.name = 'reminders_off_link';
+$$;
+
+-- Called by the n8n job's "Turn off these reminders" webhook (no sign-in): checks
+-- the token and switches that player's reminders off. Returns 'off' (also when
+-- they were already off or the player has no reminder) or 'invalid'.
+create or replace function public.turn_off_reminders(p_token text)
+returns text
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  uid uuid;
+begin
+  if p_token is null or p_token !~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.[A-Za-z0-9_-]{43}$' then
+    return 'invalid';
+  end if;
+  uid := split_part(p_token, '.', 1)::uuid;
+  if public.reminders_off_token(uid) is distinct from p_token then
+    return 'invalid';
+  end if;
+  update public.reminders set enabled = false where user_id = uid and enabled;
+  return 'off';
+end $$;
+
 -- Finds every reminder due now in its player's own time zone and marks it handled
 -- for its local day. Due means: switched on; the reminder's local day (today, or
 -- yesterday for a late-night time whose window runs past midnight) is one of the
@@ -130,12 +187,18 @@ create trigger reminders_before_write before insert or update on public.reminder
 -- has passed starts the next chosen day); nothing was handled for that local day
 -- yet; and the email is still on the buyer list.
 -- outcome 'skipped': the player asked to skip and practised earlier on that local day.
+-- A send that failed (finish_reminder recorded 'failed') is claimed again by the
+-- next runs while its time is still within window_minutes, at most 3 tries in all
+-- for that local day; the job keeps the same Resend idempotency key, so a retry
+-- can never send a second email.
 -- Two runs at once cannot both claim a reminder: the update re-checks
 -- last_handled_on on the locked row, so the second run updates nothing.
-create or replace function public.claim_due_reminders(window_minutes integer default 45)
+-- (dropped first because the F2 fixes added the off_token and tries columns)
+drop function if exists public.claim_due_reminders(integer);
+create function public.claim_due_reminders(window_minutes integer default 45)
 returns table (
   user_id uuid, email text, first_name text, local_date date, remind_at time,
-  time_zone text, outcome text, practice jsonb
+  time_zone text, outcome text, practice jsonb, off_token text, tries smallint
 )
 language plpgsql
 security definer
@@ -164,19 +227,24 @@ begin
        and c.slot <= now()
        and c.slot > now() - make_interval(mins => greatest(window_minutes, 1))
        and r.settings_updated_at <= c.slot
-       and (r.last_handled_on is null or r.last_handled_on < c.ld)
+       and (r.last_handled_on is null or r.last_handled_on < c.ld
+            or (r.last_handled_on = c.ld and r.last_outcome = 'failed' and r.send_tries < 3))
      order by c.uid, c.ld desc
   ), upd as (
     update public.reminders r
-       set last_handled_on = d.ld, last_outcome = d.oc, last_handled_at = now()
+       set last_handled_on = d.ld, last_outcome = d.oc, last_handled_at = now(),
+           send_tries = (case when r.last_handled_on = d.ld then r.send_tries else 0 end)
+                        + (case when d.oc = 'sending' then 1 else 0 end)
       from due d
      where r.user_id = d.uid
        and r.enabled
-       and (r.last_handled_on is null or r.last_handled_on < d.ld)
-    returning r.user_id, r.remind_at, r.time_zone, d.ld, d.oc
+       and (r.last_handled_on is null or r.last_handled_on < d.ld
+            or (r.last_handled_on = d.ld and r.last_outcome = 'failed' and r.send_tries < 3))
+    returning r.user_id, r.remind_at, r.time_zone, d.ld, d.oc, r.send_tries
   )
   select upd.user_id, lower(u.email)::text, nullif(trim(a.first_name), '')::text, upd.ld,
-         upd.remind_at, upd.time_zone, upd.oc, coalesce(p.data -> 'practice', '{}'::jsonb)
+         upd.remind_at, upd.time_zone, upd.oc, coalesce(p.data -> 'practice', '{}'::jsonb),
+         public.reminders_off_token(upd.user_id), upd.send_tries
     from upd
     join auth.users u on u.id = upd.user_id
     join public.access a on a.email = lower(u.email)
@@ -198,5 +266,8 @@ $$;
 revoke all on function public.claim_due_reminders(integer) from public, anon, authenticated;
 revoke all on function public.finish_reminder(uuid, date, text) from public, anon, authenticated;
 revoke all on function public.reminders_before_write() from public, anon, authenticated;
+revoke all on function public.reminders_off_token(uuid) from public, anon, authenticated;
+revoke all on function public.turn_off_reminders(text) from public, anon, authenticated;
+grant execute on function public.turn_off_reminders(text) to service_role;
 grant execute on function public.claim_due_reminders(integer) to service_role;
 grant execute on function public.finish_reminder(uuid, date, text) to service_role;
