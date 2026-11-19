@@ -29,7 +29,7 @@ function rmSignedIn(){ return !!(typeof sb!=="undefined" && sb && sbUser && acce
 
 /* The line about today's practice, the same one the email uses. */
 function rmTodayLine(){
-  for(let d=1; d<=21; d++){ if(!practiceDone[d]){ const t=PRACTICE[d-1]; return "Day "+d+" is ready: "+t[0]+". "+t[1]; } }
+  for(let d=1; d<=21; d++){ if(!practiceDone[d]){ const t=PRACTICE[d-1]; return "Day "+d+" is ready: "+t[0]+". Ten minutes is plenty."; } }
   return "All 21 days are done. Pick a song you love and play it through twice.";
 }
 function rmSubject(hm){
@@ -81,7 +81,7 @@ function renderReminders(loading){
        '<div class="rmbody'+(s.enabled?'':' off')+'">'+
        '<div class="rmlbl">Time</div><div class="chips rmchips">'+
        RM_TIMES.map(t=>'<button type="button" class="chip'+(s.remind_at===t?' on':'')+'" aria-pressed="'+(s.remind_at===t)+'" onclick="rmSetTime(\''+t+'\')">'+rmLabel(t)+'</button>').join("")+
-       '<label class="chip rmother'+(custom?' on':'')+'">Other <input type="time" id="rmTime" step="300" value="'+esc(s.remind_at)+'" onchange="rmSetTime(this.value)" aria-label="Pick another time"></label></div>'+
+       '<label class="chip rmother'+(custom?' on':'')+'">Other <input type="time" id="rmTime" step="300" value="'+(custom?esc(s.remind_at):"")+'" onchange="rmSetTime(this.value)" aria-label="Pick another time"></label></div>'+
        '<div class="rmlbl">Days</div><div class="chips rmchips">'+
        RM_DAYS.map(([n,l])=>{ const on=s.days.indexOf(n)>=0; return '<button type="button" class="chip'+(on?' on':'')+'" aria-pressed="'+on+'" onclick="rmToggleDay('+n+')">'+l+'</button>'; }).join("")+'</div>'+
        '<div class="rmrow"><span id="rmSkipLbl">Skip it if I\'ve already practised that day</span>'+
