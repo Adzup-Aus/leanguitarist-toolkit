@@ -142,6 +142,7 @@ function startSession(user){
     const ok=await syncNow();
     if(!ok){ accessOk=false; return {status:"error",email}; }
     renderAcctBtn();
+    if(typeof rmFlushPractice==="function") rmFlushPractice(); /* F2: a practice time saved while offline */
     return {status:"ok",email,before};
   })();
   sessionRun=run;

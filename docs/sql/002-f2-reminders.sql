@@ -19,6 +19,12 @@ create table if not exists public.reminders (
   -- last time the player ticked a practice day or campfire skill, or started
   -- the practice timer (set to the server's clock by the trigger below)
   last_practised_at timestamptz,
+  -- the last practice on an earlier local day than last_practised_at, so a
+  -- late-night reminder claimed just after midnight still sees the day before
+  prev_practised_at timestamptz,
+  -- true once the player has saved the settings on the reminders screen (a row
+  -- can also be made by the practised signal alone)
+  saved boolean not null default false,
   -- when the time, days, zone or switches last changed (server clock)
   settings_updated_at timestamptz not null default now(),
   -- written only by the n8n job (players have no write access to these)
@@ -31,6 +37,10 @@ create table if not exists public.reminders (
   constraint reminders_outcome_ok check (last_outcome is null or last_outcome in ('sending','sent','failed','skipped'))
 );
 
+-- Added after the first version of the table (round 2 of the outside check).
+alter table public.reminders add column if not exists prev_practised_at timestamptz;
+alter table public.reminders add column if not exists saved boolean not null default false;
+
 alter table public.reminders enable row level security;
 
 -- Players on the buyer list (public.access): read their own row, and write only the
@@ -39,9 +49,9 @@ alter table public.reminders enable row level security;
 -- the policies keep it equal to the player's own id.)
 revoke all on public.reminders from anon, authenticated;
 grant select, delete on public.reminders to authenticated;
-grant insert (user_id, enabled, remind_at, days, time_zone, skip_if_practised, last_practised_at)
+grant insert (user_id, enabled, remind_at, days, time_zone, skip_if_practised, last_practised_at, saved)
   on public.reminders to authenticated;
-grant update (user_id, enabled, remind_at, days, time_zone, skip_if_practised, last_practised_at)
+grant update (user_id, enabled, remind_at, days, time_zone, skip_if_practised, last_practised_at, saved)
   on public.reminders to authenticated;
 grant all on public.reminders to service_role;
 
@@ -58,25 +68,44 @@ create policy "reminders: update own row" on public.reminders
 create policy "reminders: delete own row" on public.reminders
   for delete to authenticated using (user_id = (select auth.uid()) and exists (select 1 from public.access a where a.email = lower((select auth.jwt()) ->> 'email')));
 
--- Server clock for the practised time and the settings time; reject an unknown time zone.
+-- The practised time: the app sends when the player practised (a tick saved while
+-- offline or interrupted is sent later with its own time); it is kept within the
+-- last 24 hours, never in the future and never earlier than the time already
+-- saved. When it moves to a new local day, the old one is kept in
+-- prev_practised_at. The settings time is the server clock. An unknown time zone
+-- is refused.
 create or replace function public.reminders_before_write()
 returns trigger
 language plpgsql
 set search_path = ''
 as $$
+declare
+  old_at timestamptz;
 begin
   perform now() at time zone new.time_zone;  -- raises for an unknown zone name
-  if tg_op = 'INSERT' then
-    if new.last_practised_at is not null then new.last_practised_at := now(); end if;
-    new.settings_updated_at := now();
+  if tg_op = 'UPDATE' then
+    old_at := old.last_practised_at;
+    new.prev_practised_at := old.prev_practised_at;
   else
-    if new.last_practised_at is distinct from old.last_practised_at then
-      new.last_practised_at := case when new.last_practised_at is null then old.last_practised_at else now() end;
+    new.prev_practised_at := null;
+    new.settings_updated_at := now();
+  end if;
+  if new.last_practised_at is null then
+    new.last_practised_at := old_at;
+  elsif new.last_practised_at is distinct from old_at then
+    new.last_practised_at := greatest(least(new.last_practised_at, now()), now() - interval '24 hours');
+    if old_at is not null then
+      if new.last_practised_at < old_at then
+        new.last_practised_at := old_at;
+      elsif (new.last_practised_at at time zone new.time_zone)::date
+            > (old_at at time zone new.time_zone)::date then
+        new.prev_practised_at := old_at;
+      end if;
     end if;
-    if (new.enabled, new.remind_at, new.days, new.time_zone, new.skip_if_practised)
-       is distinct from (old.enabled, old.remind_at, old.days, old.time_zone, old.skip_if_practised) then
-      new.settings_updated_at := now();
-    end if;
+  end if;
+  if tg_op = 'UPDATE' and (new.enabled, new.remind_at, new.days, new.time_zone, new.skip_if_practised)
+     is distinct from (old.enabled, old.remind_at, old.days, old.time_zone, old.skip_if_practised) then
+    new.settings_updated_at := now();
   end if;
   return new;
 end $$;
@@ -115,8 +144,9 @@ begin
      where r.enabled
   ), due as (
     select distinct on (c.uid) c.uid, c.ld,
-      case when r.skip_if_practised and r.last_practised_at is not null
-             and (r.last_practised_at at time zone r.time_zone)::date = c.ld
+      case when r.skip_if_practised
+             and ((r.last_practised_at at time zone r.time_zone)::date = c.ld
+               or (r.prev_practised_at at time zone r.time_zone)::date = c.ld)
            then 'skipped' else 'sending' end as oc
       from cand c
       join public.reminders r on r.user_id = c.uid

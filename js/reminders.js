@@ -13,7 +13,7 @@ const RM_TIMES=["07:00","12:30","18:00","19:30","21:00"];
 const RM_DAYS=[[1,"Mon"],[2,"Tue"],[3,"Wed"],[4,"Thu"],[5,"Fri"],[6,"Sat"],[7,"Sun"]];
 const RM_DEFAULT={enabled:true, remind_at:"19:30", days:[1,2,3,4,5,7], skip_if_practised:true};
 let rmState=null, rmSaving=false, rmLoadedFor="", rmScreen=0;
-let rmLastPractice={key:"",at:0}, rmPracticeTimer=null, rmPracticeFor=null;
+let rmPracticeBusy=false;
 
 function rmZone(){
   try{ const z=Intl.DateTimeFormat().resolvedOptions().timeZone; if(z) return String(z); }catch(_){}
@@ -48,7 +48,7 @@ async function openReminders(){
   try{
     opsCost("reminders: load");
     const [r,a]=await Promise.all([
-      sb.from("reminders").select("enabled,remind_at,days,time_zone,skip_if_practised").eq("user_id",uid).maybeSingle(),
+      sb.from("reminders").select("enabled,remind_at,days,time_zone,skip_if_practised,saved").eq("user_id",uid).maybeSingle(),
       sb.from("access").select("first_name").eq("email",String(sbUser.email||"").trim().toLowerCase()).maybeSingle()
     ]);
     if(r.error) throw r.error;
@@ -57,10 +57,10 @@ async function openReminders(){
     const row=r.data;
     rmLoadedFor=uid;
     /* A saved reminder keeps the time zone it was saved with until the player
-       chooses this device's zone; a new one starts with this device's zone. A row
-       made only by the practised signal (never saved from this screen) has the
-       table's placeholder zone, so it starts from the defaults too. */
-    const saved=row && (row.enabled || row.time_zone!=="UTC" || rmZone()==="UTC");
+       chooses this device's zone. A new one, or a row made only by the practised
+       signal (never saved from this screen), starts from the defaults and this
+       device's zone. */
+    const saved=!!(row && row.saved);
     rmState=saved ? {enabled:!!row.enabled, remind_at:rmHM(row.remind_at)||"19:30",
                    days:(row.days||[]).map(Number), skip_if_practised:!!row.skip_if_practised, zone:row.time_zone||rmZone(), savedOn:!!row.enabled}
                 : {...RM_DEFAULT, days:[...RM_DEFAULT.days], zone:rmZone(), savedOn:false};
@@ -123,7 +123,7 @@ async function rmSave(){
   if(rmState.enabled && !rmState.days.length){ toast("Pick at least one day"); return; }
   const screen=rmScreen, wasOn=rmState.savedOn;
   const row={user_id:sbUser.id, enabled:rmState.enabled, remind_at:rmState.remind_at, days:[...rmState.days],
-             time_zone:rmState.zone||rmZone(), skip_if_practised:rmState.skip_if_practised};
+             time_zone:rmState.zone||rmZone(), skip_if_practised:rmState.skip_if_practised, saved:true};
   rmSaving=true; renderReminders();
   try{
     opsCost("reminders: save");
@@ -144,29 +144,31 @@ async function rmSave(){
 }
 
 /* ============ "PRACTISED TODAY" ============ */
-/* Called on a tick (not an un-tick) and when the practice timer starts. Saves at
-   most once every 10 minutes per account and local day, so the first practice
-   after midnight always counts. The write belongs to the account that practised:
-   it is dropped if that player signs out or another signs in before it goes. The
-   server stamps its own clock. */
-function rmLocalDay(){ const d=new Date(); return d.getFullYear()+"-"+(d.getMonth()+1)+"-"+d.getDate(); }
+/* Called on a tick (not an un-tick) and when the practice timer starts. The time
+   of the practice is kept on this device first (per account), then sent at once;
+   if the page closes or the network drops before it lands, it is sent with its
+   own time the next time this player's session starts. The server keeps it
+   within the last 24 hours and never moves it backwards. */
+function rmPendingKey(uid){ return "lg_rm_practice:"+uid; }
 function notePractised(){
   if(!rmSignedIn()) return;
-  const key=sbUser.id+"|"+rmLocalDay();
-  if(rmLastPractice.key===key && Date.now()-rmLastPractice.at<10*60*1000) return;
-  if(rmPracticeTimer && rmPracticeFor===key) return;
-  if(rmPracticeTimer) clearTimeout(rmPracticeTimer);
-  rmPracticeFor=key;
-  const uid=sbUser.id;
-  rmPracticeTimer=setTimeout(()=>rmSendPractice(uid,key),1500);
+  const uid=sbUser.id, at=new Date().toISOString();
+  LS.set(rmPendingKey(uid),at);
+  rmFlushPractice();
 }
-async function rmSendPractice(uid,key){
-  rmPracticeTimer=null; rmPracticeFor=null;
-  if(!rmSignedIn()||sbUser.id!==uid) return;
+async function rmFlushPractice(){
+  if(!rmSignedIn()||rmPracticeBusy) return;
+  const uid=sbUser.id, key=rmPendingKey(uid), at=LS.get(key,null);
+  if(!at) return;
+  rmPracticeBusy=true;
   try{
     opsCost("reminders: practised");
-    const {error}=await sb.from("reminders").upsert({user_id:uid, last_practised_at:new Date().toISOString()},{onConflict:"user_id"});
+    const {error}=await sb.from("reminders").upsert({user_id:uid, last_practised_at:at},{onConflict:"user_id"});
     if(error) throw error;
-    rmLastPractice={key,at:Date.now()};
+    if(LS.get(key,null)===at){ try{ localStorage.removeItem(key); }catch(_){} }
   }catch(e){ opsErr("reminders: practised",e); }
+  finally{ rmPracticeBusy=false; }
+  /* A practice that came in while this one was on its way. */
+  const next=LS.get(key,null);
+  if(next && next!==at && rmSignedIn() && sbUser.id===uid) rmFlushPractice();
 }
