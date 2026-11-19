@@ -131,7 +131,7 @@ function startSession(user){
     let res;
     try{ res=await sb.from("access").select("email").eq("email",email).maybeSingle(); }catch(e){ res={error:e}; }
     if(res.error){ opsErr("sign-in: buyer check",res.error); return {status:"error",email}; }
-    if(!res.data){ await localSignOut(); return {status:"notbuyer",email}; }
+    if(!res.data){ const out=await localSignOut(true); return {status:"notbuyer",email,signOutFailed:!out}; }
     accessOk=true;
     const ok=await syncNow();
     if(!ok){ accessOk=false; return {status:"error",email}; }
@@ -142,20 +142,26 @@ function startSession(user){
   run.then(r=>{ if(r.status!=="ok" && sessionRun===run){ sessionRun=null; sessionRunFor=""; } });
   return run;
 }
-/* Signs out this device only. Returns false if the stored session is still there. */
-async function localSignOut(){
+/* Signs out this device only. Returns false if the stored session is still there.
+   force: stop using the account on this page even then (no syncing, account
+   button shows signed out); the next start runs the buyer check again. */
+async function localSignOut(force){
   let error=null;
   try{ if(sb){ const r=await sb.auth.signOut({scope:"local"}); error=r&&r.error; } }catch(e){ error=e; }
   if(error){
     opsErr("sign out",error);
     let still=true;
     try{ const {data}=await sb.auth.getSession(); still=!!(data&&data.session); }catch(_){}
-    if(still){ renderAcctBtn(); return false; }
+    if(still && !force){ renderAcctBtn(); return false; }
+    if(still){ clearSignedIn(); return false; }
   }
+  clearSignedIn();
+  return true;
+}
+function clearSignedIn(){
   if(syncTimer){ clearTimeout(syncTimer); syncTimer=null; }
   sbUser=null; accessOk=false; sessionRun=null; sessionRunFor="";
   renderAcctBtn();
-  return true;
 }
 
 function initSupabase(){
@@ -255,7 +261,8 @@ function showSignin(screen,info){
       '<p class="gatep">We couldn\'t find a Lean Guitarist purchase for <b>'+em+'</b>. If you bought with a different email, try that one.</p>'+
       siBtn("Try another email","showSignin('signin')")+
       '<a class="btn ghost sibtn" href="https://leanguitarist.com" target="_blank" rel="noopener">Visit leanguitarist.com</a>'+
-      siBtn("Keep using it without signing in","keepWithout()","ghost");
+      siBtn("Keep using it without signing in","keepWithout()","ghost")+
+      (info.signOutFailed?'<p class="sismall">We couldn\'t finish signing you out on this device. Nothing will be saved to this email, and we\'ll try again next time.</p>':'');
   } else if(screen==="checkerror"){
     h='<div class="k">Signed in as '+em+'</div>'+
       '<h2 class="gateh" id="siTitle">We couldn\'t check your purchase just now</h2>'+
@@ -341,8 +348,9 @@ async function retryCheck(){
   try{ await showSessionResult(sbUser); }finally{ verifying=false; }
 }
 async function signOutAndClose(){
-  if(!(await localSignOut())){ toast("Couldn't sign out. Please try again"); return; }
+  const out=await localSignOut(true);
   closeSignin();
+  if(!out) toast("Couldn't finish signing out. We'll try again next time");
 }
 async function signOut(){
   const saved=await flushSync();
