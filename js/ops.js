@@ -1,7 +1,9 @@
 /* Internal error log and running-cost log (App Build Principles, principle 7 and
    section 5: 5a runtime cost calculator, 5b error logs).
-   Players never see either. For now both are kept in memory and written to the
-   browser console; F1 sends them on to the internal side.
+   Players never see either. Both are kept in memory and written to the browser
+   console, and every error is also sent to the server (Supabase table
+   public.app_errors, insert only; read by the team in Supabase), batched and capped
+   per page load. Costs stay in memory: every call today is on Supabase's free plan.
    Loaded first, so it also catches errors thrown while the other files load.
 
    From the browser console (team only):
@@ -55,6 +57,7 @@
     };
     keep(errors, entry);
     try { console.warn("[LG ops] error:", entry.task, entry); } catch (_) {}
+    try { queueSend(entry); } catch (_) {}
     return entry;
   }
 
@@ -100,6 +103,44 @@
     try { if (navigator.clipboard) navigator.clipboard.writeText(text).catch(() => {}); } catch (_) {}
     return text;
   }
+
+  /* Send errors to the server: batched every 5 seconds, at most 20 per page load,
+     the same error only once. Uses the app's public key, which may only add rows.
+     A failed send is dropped quietly so it can never cause more errors. */
+  const SEND_MAX = 20;
+  const outbox = [];
+  const seen = new Set();
+  let sent = 0, sendTimer = null;
+  function queueSend(entry){
+    const key = entry.task + "|" + entry.error;
+    if (seen.has(key) || sent + outbox.length >= SEND_MAX) return;
+    seen.add(key);
+    outbox.push({
+      app: "LEA112",
+      task: String(entry.task).slice(0, 200),
+      error: String(((entry.error || "") + (entry.stack ? "\n" + entry.stack : ""))).slice(0, 4000),
+      context: entry.context === undefined ? null : String(entry.context).slice(0, 4000),
+      page: String(entry.page || "").slice(0, 500),
+      agent: String(navigator.userAgent || "").slice(0, 300)
+    });
+    if (!sendTimer) sendTimer = setTimeout(flushSend, 5000);
+  }
+  function flushSend(){
+    sendTimer = null;
+    if (!outbox.length) return;
+    let url, key;
+    try { url = SUPABASE_URL; key = SUPABASE_ANON_KEY; } catch (_) { return; }
+    const rows = outbox.splice(0, outbox.length);
+    sent += rows.length;
+    try {
+      fetch(url + "/rest/v1/app_errors", {
+        method: "POST", keepalive: true,
+        headers: { "apikey": key, "Content-Type": "application/json", "Prefer": "return=minimal" },
+        body: JSON.stringify(rows)
+      }).catch(() => {});
+    } catch (_) {}
+  }
+  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden" && outbox.length) flushSend(); });
 
   window.addEventListener("error", (ev) => {
     logError("uncaught error", ev.error || ev.message, { file: ev.filename, line: ev.lineno, col: ev.colno });
