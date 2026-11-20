@@ -20,5 +20,5 @@ function renderPractice(){
     return h;
   }).join("");
 }
-function toggleDay(d){practiceDone[d]=!practiceDone[d];LS.set("ccf_practice",practiceDone);renderPractice();}
+function toggleDay(d){practiceDone[d]=!practiceDone[d];if(practiceDone[d]&&typeof notePractised==="function")notePractised();LS.set("ccf_practice",practiceDone);renderPractice();}
 function resetPractice(){practiceDone={};LS.set("ccf_practice",practiceDone);renderPractice();toast("Tracker reset");}

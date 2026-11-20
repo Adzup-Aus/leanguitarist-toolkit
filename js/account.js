@@ -142,6 +142,7 @@ function startSession(user){
     const ok=await syncNow();
     if(!ok){ accessOk=false; return {status:"error",email}; }
     renderAcctBtn();
+    if(typeof rmFlushPractice==="function") rmFlushPractice(); /* F2: a practice time saved while offline */
     return {status:"ok",email,before};
   })();
   sessionRun=run;
@@ -284,6 +285,7 @@ function showSignin(screen,info){
       '<h2 class="gateh" id="siTitle">Your progress is saved</h2>'+
       '<p class="gatep">Signed in as <b>'+esc(String((sbUser&&sbUser.email)||""))+'</b>. Your practice tracker, campfire checklist, setlist and own songs save to your account and show on every device you sign in on.</p>'+
       siBtn("Back to the app","closeSignin()")+
+      siBtn("Practice reminder by email","openReminders()","ghost")+
       siBtn("Sign out","signOut()","ghost");
   }
   b.innerHTML=h;

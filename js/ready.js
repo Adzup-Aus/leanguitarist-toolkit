@@ -15,4 +15,4 @@ function renderCampfire(){
     return h+"</div>";
   }).join("");
 }
-function toggleCk(id){campfireDone[id]=!campfireDone[id];LS.set("ccf_campfire",campfireDone);renderCampfire();}
+function toggleCk(id){campfireDone[id]=!campfireDone[id];if(campfireDone[id]&&typeof notePractised==="function")notePractised();LS.set("ccf_campfire",campfireDone);renderCampfire();}
