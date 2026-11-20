@@ -10,7 +10,6 @@
 const SUPABASE_URL="https://xoyatbnihfnbovnstewu.supabase.co";
 const SUPABASE_ANON_KEY="sb_publishable_GYbkCWBZGaTBjsRzyVhwgA_xPHX-jPD";
 const SYNC_ON = !!(window.supabase && window.supabase.createClient);
-const SIGNIN_SEEN_KEY="lg_signin_seen";
 
 let sb=null, sbUser=null, accessOk=false, syncTimer=null, pendingEmail="";
 let sessionRun=null, sessionRunFor="", verifying=false, applying=false, lastPull=0;
@@ -191,7 +190,7 @@ function initSupabase(){
 function onAuthChange(event,user){
   if(!user){
     sbUser=null; accessOk=false; sessionRun=null; sessionRunFor=""; renderAcctBtn();
-    if(event==="INITIAL_SESSION") maybeShowSigninOnce();
+    if(event==="INITIAL_SESSION"||event==="SIGNED_OUT") requireSignin();
     return;
   }
   if(optedOut && !verifying) return; /* stays signed out on this page */
@@ -220,14 +219,16 @@ function renderAcctBtn(){
   b.setAttribute("aria-label",inn?"Your account":"Sign in to save your progress");
 }
 function openAcct(){ showSignin(sbUser&&accessOk?"account":"signin"); }
-function closeSignin(){ const g=document.getElementById("loginGate"); if(g) g.style.display="none"; }
-/* The app shows the sign-in screen by itself once, on the first visit after F1. */
-function maybeShowSigninOnce(){
-  if(LS.get(SIGNIN_SEEN_KEY,false)) return;
-  LS.set(SIGNIN_SEEN_KEY,true);
-  showSignin("signin");
+/* The gate: the app needs a signed-in buyer. A device with a stored session keeps
+   working offline (sbUser is set from the stored session even when the buyer check
+   cannot run). If the sign-in library did not load (sb is null) the app stays open. */
+function mustSignIn(){ return !!sb && !sbUser; }
+function gateOpen(){ const g=document.getElementById("loginGate"); return !!g && g.style.display==="flex"; }
+function requireSignin(){ if(mustSignIn() && !gateOpen()) showSignin("signin"); }
+function closeSignin(){
+  if(mustSignIn()){ showSignin("signin"); return; }
+  const g=document.getElementById("loginGate"); if(g) g.style.display="none";
 }
-function keepWithout(){ closeSignin(); }
 function siBtn(label,onclick,cls,id){ return '<button type="'+(onclick?"button":"submit")+'" class="btn'+(cls?" "+cls:"")+' sibtn"'+(id?' id="'+id+'"':'')+(onclick?' onclick="'+onclick+'"':'')+'>'+label+'</button>'; }
 function showSignin(screen,info){
   const g=document.getElementById("loginGate"), b=document.getElementById("siBody"); if(!g||!b) return;
@@ -242,8 +243,7 @@ function showSignin(screen,info){
       '<input id="siEmail" class="search" type="email" autocomplete="email" inputmode="email" placeholder="you@email.com" aria-label="Email" value="'+em+'">'+
       '<p class="sismall siprivacy">We use your email to sign you in and save your progress. See our <a href="https://leanguitarist.com/privacy-policy" target="_blank" rel="noopener">Privacy policy</a>.</p>'+
       siBtn("Send me a code","", "", "siSend")+'</form>'+
-      siBtn("Keep using it without signing in","keepWithout()","ghost")+
-      '<p class="sismall">Without signing in, your progress stays on this device only.</p>';
+      '<p class="sismall">Anything you already ticked on this device moves into your account when you sign in.</p>';
   } else if(screen==="code"){
     h='<div class="k">Check your email</div>'+
       '<h2 class="gateh" id="siTitle">Enter the code we sent</h2>'+
@@ -272,14 +272,14 @@ function showSignin(screen,info){
       '<p class="gatep">If you bought recently, wait an hour and try again. If it still doesn\'t work, contact us at info@leanguitarist.com.</p>'+
       siBtn("Try another email","showSignin('signin')")+
       '<a class="btn ghost sibtn" href="https://leanguitarist.com" target="_blank" rel="noopener">Visit leanguitarist.com</a>'+
-      siBtn("Keep using it without signing in","keepWithout()","ghost")+
       (info.signOutFailed?'<p class="sismall">We couldn\'t finish signing you out on this device. Nothing will be saved to this email, and we\'ll try again next time.</p>':'');
   } else if(screen==="checkerror"){
     h='<div class="k">Signed in as '+em+'</div>'+
       '<h2 class="gateh" id="siTitle">We couldn\'t check your purchase just now</h2>'+
       '<p class="gatep">Please check your connection and try again. Your progress on this device is safe.</p>'+
       siBtn("Try again","retryCheck()","","siRetry")+
-      siBtn("Keep using it without signing in","signOutAndClose()","ghost");
+      siBtn("Back to the app","closeSignin()","ghost")+
+      siBtn("Sign out","signOutAndClose()","ghost");
   } else if(screen==="account"){
     h='<div class="k">Signed in</div>'+
       '<h2 class="gateh" id="siTitle">Your progress is saved</h2>'+
