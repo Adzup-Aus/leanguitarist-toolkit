@@ -186,6 +186,7 @@ function initSupabase(){
     setTimeout(()=>onAuthChange(event,user),0);
   });
   document.addEventListener("visibilitychange",onVisible);
+  window.addEventListener("online",recoverStoredSession);
 }
 function onAuthChange(event,user){
   if(!user){
@@ -198,8 +199,20 @@ function onAuthChange(event,user){
   if(verifying) return; /* verifyCode() runs the session and shows the result */
   startSession(user).then(r=>{ if(r.status==="notbuyer") showSignin("notbuyer",r); });
 }
+/* A signed-in device that starts offline after its access token expired: supabase-js
+   cannot refresh it, reports no session, but keeps the stored session. Once back
+   online, pick the stored session up again (getSession refreshes it). */
+function recoverStoredSession(){
+  if(!sb||sbUser||optedOut||verifying||!hasStoredSession()) return;
+  sb.auth.getSession().then(({data})=>{
+    const u=data&&data.session&&data.session.user;
+    if(u && !sbUser) onAuthChange("RECOVERED",u);
+    else if(!u) requireSignin();
+  }).catch(e=>opsErr("sign-in: recover session",e));
+}
 /* Back on the tab: save anything waiting, or pick up ticks made on another device. */
 function onVisible(){
+  if(sb && !sbUser && document.visibilityState!=="hidden") recoverStoredSession();
   if(!sb||!sbUser) return;
   if(document.visibilityState==="hidden"){
     if(syncTimer){ clearTimeout(syncTimer); syncTimer=null; syncNow(); }
@@ -218,11 +231,30 @@ function renderAcctBtn(){
   b.classList.toggle("in",inn);
   b.setAttribute("aria-label",inn?"Your account":"Sign in to save your progress");
 }
-function openAcct(){ showSignin(sbUser&&accessOk?"account":"signin"); }
+/* Signed in but the purchase check could not run (offline, or it failed): the
+   account button shows that screen, not the email form. */
+function openAcct(){
+  if(sbUser&&accessOk) showSignin("account");
+  else if(sbUser) showSignin("checkerror",{email:sbUser.email});
+  else showSignin("signin");
+}
+/* A stored session on this device (supabase-js keeps it while a token refresh
+   fails for lack of a connection, and removes it on sign-out or when the server
+   refuses it). */
+function hasStoredSession(){
+  try{
+    const k=(sb&&sb.auth&&sb.auth.storageKey)||"sb-xoyatbnihfnbovnstewu-auth-token";
+    const v=JSON.parse(localStorage.getItem(k)||"null");
+    return !!(v&&(v.refresh_token||(v.currentSession&&v.currentSession.refresh_token)));
+  }catch(_){ return false; }
+}
 /* The gate: the app needs a signed-in buyer. A device with a stored session keeps
-   working offline (sbUser is set from the stored session even when the buyer check
-   cannot run). If the sign-in library did not load (sb is null) the app stays open. */
-function mustSignIn(){ return !!sb && !sbUser; }
+   working offline: sbUser is set from the stored session even when the buyer check
+   cannot run, and when the access token expired while offline (sbUser is then null)
+   the stored session still counts until a connection is back. A page that chose to
+   stop using a session it could not sign out of (optedOut) is gated. If the sign-in
+   library did not load (sb is null) the app stays open. */
+function mustSignIn(){ return !!sb && !sbUser && (optedOut || !hasStoredSession()); }
 function gateOpen(){ const g=document.getElementById("loginGate"); return !!g && g.style.display==="flex"; }
 function requireSignin(){ if(mustSignIn() && !gateOpen()) showSignin("signin"); }
 function closeSignin(){
