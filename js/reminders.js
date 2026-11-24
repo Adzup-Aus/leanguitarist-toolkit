@@ -73,6 +73,7 @@ async function openReminders(){
 }
 function renderReminders(loading){
   const g=document.getElementById("loginGate"), b=document.getElementById("siBody"); if(!g||!b) return;
+  g.dataset.screen="reminders";
   let h='<div class="k">Practice reminder &middot; by email</div>'+
         '<h2 class="gateh" id="siTitle">When should we nudge you?</h2>';
   if(loading){

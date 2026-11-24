@@ -263,7 +263,15 @@ function hasStoredSession(){
    library did not load (sb is null) the app stays open. */
 function mustSignIn(){ return !!sb && !sbUser && (optedOut || !hasStoredSession()); }
 function gateOpen(){ const g=document.getElementById("loginGate"); return !!g && g.style.display==="flex"; }
-function requireSignin(){ if(mustSignIn() && !gateOpen()) showSignin("signin"); }
+/* Screens a signed-out player may be on. Anything else open (account, reminders,
+   saved, purchase-check error) belongs to a session that has ended, for example
+   after signing out in another tab, and is replaced by the sign-in form. */
+const SIGNED_OUT_SCREENS=["signin","code","notbuyer"];
+function requireSignin(){
+  if(!mustSignIn()) return;
+  const g=document.getElementById("loginGate");
+  if(!gateOpen() || SIGNED_OUT_SCREENS.indexOf(g&&g.dataset.screen)<0) showSignin("signin");
+}
 function closeSignin(){
   if(mustSignIn()){ showSignin("signin"); return; }
   const g=document.getElementById("loginGate"); if(g) g.style.display="none";
@@ -328,6 +336,7 @@ function showSignin(screen,info){
       siBtn("Sign out","signOut()","ghost");
   }
   b.innerHTML=h;
+  g.dataset.screen=screen;
   if(screen==="notbuyer") pendingEmail="";
   g.style.display="flex";
   const first=b.querySelector("input")||b.querySelector("button");
