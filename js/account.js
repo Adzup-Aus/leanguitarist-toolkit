@@ -198,7 +198,10 @@ function onAuthChange(event,user){
   if(optedOut && !verifying) return; /* stays signed out on this page */
   sbUser=user; renderAcctBtn();
   if(verifying) return; /* verifyCode() runs the session and shows the result */
-  startSession(user).then(r=>{ if(r.status==="notbuyer") showSignin("notbuyer",r); });
+  startSession(user).then(r=>{
+    if(r.status==="notbuyer") showSignin("notbuyer",r);
+    else if(r.status==="ok" && gateOpen() && document.getElementById("loginGate").dataset.screen==="offline") showSignin("account");
+  });
 }
 /* A signed-in device that starts offline after its access token expired: supabase-js
    cannot refresh it, reports no session, but keeps the stored session. Once back
@@ -243,6 +246,7 @@ function renderAcctBtn(){
 function openAcct(){
   if(sbUser&&accessOk) showSignin("account");
   else if(sbUser) showSignin("checkerror",{email:sbUser.email});
+  else if(!mustSignIn()&&hasStoredSession()){ showSignin("offline"); recoverStoredSession(); }
   else showSignin("signin");
 }
 /* A stored session on this device (supabase-js keeps it while a token refresh
@@ -327,6 +331,13 @@ function showSignin(screen,info){
       siBtn("Try again","retryCheck()","","siRetry")+
       siBtn("Back to the app","closeSignin()","ghost")+
       siBtn("Sign out","signOutAndClose()","ghost");
+  } else if(screen==="offline"){
+    /* Signed in on this device, but the session can't be refreshed until the
+       connection is back (see recoverStoredSession). */
+    h='<div class="k">Signed in</div>'+
+      '<h2 class="gateh" id="siTitle">You\'re offline</h2>'+
+      '<p class="gatep">Keep practising. Your progress saves on this device and goes to your account when you\'re back online.</p>'+
+      siBtn("Back to the app","closeSignin()");
   } else if(screen==="account"){
     h='<div class="k">Signed in</div>'+
       '<h2 class="gateh" id="siTitle">Your progress is saved</h2>'+
