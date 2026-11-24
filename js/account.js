@@ -192,6 +192,7 @@ function onAuthChange(event,user){
   if(!user){
     sbUser=null; accessOk=false; sessionRun=null; sessionRunFor=""; renderAcctBtn();
     if(event==="INITIAL_SESSION"||event==="SIGNED_OUT") requireSignin();
+    if(event==="INITIAL_SESSION") recoverStoredSession(); /* started offline with an expired token */
     return;
   }
   if(optedOut && !verifying) return; /* stays signed out on this page */
@@ -201,14 +202,20 @@ function onAuthChange(event,user){
 }
 /* A signed-in device that starts offline after its access token expired: supabase-js
    cannot refresh it, reports no session, but keeps the stored session. Once back
-   online, pick the stored session up again (getSession refreshes it). */
+   online, pick the stored session up again (getSession refreshes it). supabase-js
+   remembers a failed refresh for 60 seconds, so this tries again every 20 seconds
+   while the device is online and the stored session is still waiting. */
+let recoverTimer=null;
 function recoverStoredSession(){
+  if(recoverTimer){ clearTimeout(recoverTimer); recoverTimer=null; }
   if(!sb||sbUser||optedOut||verifying||!hasStoredSession()) return;
-  sb.auth.getSession().then(({data})=>{
+  const again=()=>{ if(!recoverTimer) recoverTimer=setTimeout(()=>{ recoverTimer=null; if(navigator.onLine!==false) recoverStoredSession(); },20000); };
+  sb.auth.getSession().then(({data,error})=>{
     const u=data&&data.session&&data.session.user;
-    if(u && !sbUser) onAuthChange("RECOVERED",u);
-    else if(!u) requireSignin();
-  }).catch(e=>opsErr("sign-in: recover session",e));
+    if(u){ if(!sbUser) onAuthChange("RECOVERED",u); return; }
+    if(hasStoredSession()) again(); /* the refresh could not reach the server yet */
+    else requireSignin();            /* the server refused the session and it was removed */
+  }).catch(e=>{ opsErr("sign-in: recover session",e); again(); });
 }
 /* Back on the tab: save anything waiting, or pick up ticks made on another device. */
 function onVisible(){
