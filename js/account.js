@@ -10,7 +10,6 @@
 const SUPABASE_URL="https://xoyatbnihfnbovnstewu.supabase.co";
 const SUPABASE_ANON_KEY="sb_publishable_GYbkCWBZGaTBjsRzyVhwgA_xPHX-jPD";
 const SYNC_ON = !!(window.supabase && window.supabase.createClient);
-const SIGNIN_SEEN_KEY="lg_signin_seen";
 
 let sb=null, sbUser=null, accessOk=false, syncTimer=null, pendingEmail="";
 let sessionRun=null, sessionRunFor="", verifying=false, applying=false, lastPull=0;
@@ -187,20 +186,43 @@ function initSupabase(){
     setTimeout(()=>onAuthChange(event,user),0);
   });
   document.addEventListener("visibilitychange",onVisible);
+  window.addEventListener("online",recoverStoredSession);
 }
 function onAuthChange(event,user){
   if(!user){
     sbUser=null; accessOk=false; sessionRun=null; sessionRunFor=""; renderAcctBtn();
-    if(event==="INITIAL_SESSION") maybeShowSigninOnce();
+    if(event==="INITIAL_SESSION"||event==="SIGNED_OUT") requireSignin();
+    if(event==="INITIAL_SESSION") recoverStoredSession(); /* started offline with an expired token */
     return;
   }
   if(optedOut && !verifying) return; /* stays signed out on this page */
   sbUser=user; renderAcctBtn();
   if(verifying) return; /* verifyCode() runs the session and shows the result */
-  startSession(user).then(r=>{ if(r.status==="notbuyer") showSignin("notbuyer",r); });
+  startSession(user).then(r=>{
+    if(r.status==="notbuyer") showSignin("notbuyer",r);
+    else if(r.status==="ok" && gateOpen() && document.getElementById("loginGate").dataset.screen==="offline") showSignin("account");
+  });
+}
+/* A signed-in device that starts offline after its access token expired: supabase-js
+   cannot refresh it, reports no session, but keeps the stored session. Once back
+   online, pick the stored session up again (getSession refreshes it). supabase-js
+   remembers a failed refresh for 60 seconds, so this tries again every 20 seconds
+   while the device is online and the stored session is still waiting. */
+let recoverTimer=null;
+function recoverStoredSession(){
+  if(recoverTimer){ clearTimeout(recoverTimer); recoverTimer=null; }
+  if(!sb||sbUser||optedOut||verifying||!hasStoredSession()) return;
+  const again=()=>{ if(!recoverTimer) recoverTimer=setTimeout(()=>{ recoverTimer=null; if(navigator.onLine!==false) recoverStoredSession(); },20000); };
+  sb.auth.getSession().then(({data,error})=>{
+    const u=data&&data.session&&data.session.user;
+    if(u){ if(!sbUser) onAuthChange("RECOVERED",u); return; }
+    if(hasStoredSession()) again(); /* the refresh could not reach the server yet */
+    else requireSignin();            /* the server refused the session and it was removed */
+  }).catch(e=>{ opsErr("sign-in: recover session",e); again(); });
 }
 /* Back on the tab: save anything waiting, or pick up ticks made on another device. */
 function onVisible(){
+  if(sb && !sbUser && document.visibilityState!=="hidden") recoverStoredSession();
   if(!sb||!sbUser) return;
   if(document.visibilityState==="hidden"){
     if(syncTimer){ clearTimeout(syncTimer); syncTimer=null; syncNow(); }
@@ -219,15 +241,45 @@ function renderAcctBtn(){
   b.classList.toggle("in",inn);
   b.setAttribute("aria-label",inn?"Your account":"Sign in to save your progress");
 }
-function openAcct(){ showSignin(sbUser&&accessOk?"account":"signin"); }
-function closeSignin(){ const g=document.getElementById("loginGate"); if(g) g.style.display="none"; }
-/* The app shows the sign-in screen by itself once, on the first visit after F1. */
-function maybeShowSigninOnce(){
-  if(LS.get(SIGNIN_SEEN_KEY,false)) return;
-  LS.set(SIGNIN_SEEN_KEY,true);
-  showSignin("signin");
+/* Signed in but the purchase check could not run (offline, or it failed): the
+   account button shows that screen, not the email form. */
+function openAcct(){
+  if(sbUser&&accessOk) showSignin("account");
+  else if(sbUser) showSignin("checkerror",{email:sbUser.email});
+  else if(!mustSignIn()&&hasStoredSession()){ showSignin("offline"); recoverStoredSession(); }
+  else showSignin("signin");
 }
-function keepWithout(){ closeSignin(); }
+/* A stored session on this device (supabase-js keeps it while a token refresh
+   fails for lack of a connection, and removes it on sign-out or when the server
+   refuses it). */
+function hasStoredSession(){
+  try{
+    const k=(sb&&sb.auth&&sb.auth.storageKey)||"sb-xoyatbnihfnbovnstewu-auth-token";
+    const v=JSON.parse(localStorage.getItem(k)||"null");
+    return !!(v&&(v.refresh_token||(v.currentSession&&v.currentSession.refresh_token)));
+  }catch(_){ return false; }
+}
+/* The gate: the app needs a signed-in buyer. A device with a stored session keeps
+   working offline: sbUser is set from the stored session even when the buyer check
+   cannot run, and when the access token expired while offline (sbUser is then null)
+   the stored session still counts until a connection is back. A page that chose to
+   stop using a session it could not sign out of (optedOut) is gated. If the sign-in
+   library did not load (sb is null) the app stays open. */
+function mustSignIn(){ return !!sb && !sbUser && (optedOut || !hasStoredSession()); }
+function gateOpen(){ const g=document.getElementById("loginGate"); return !!g && g.style.display==="flex"; }
+/* Screens a signed-out player may be on. Anything else open (account, reminders,
+   saved, purchase-check error) belongs to a session that has ended, for example
+   after signing out in another tab, and is replaced by the sign-in form. */
+const SIGNED_OUT_SCREENS=["signin","code","notbuyer"];
+function requireSignin(){
+  if(!mustSignIn()) return;
+  const g=document.getElementById("loginGate");
+  if(!gateOpen() || SIGNED_OUT_SCREENS.indexOf(g&&g.dataset.screen)<0) showSignin("signin");
+}
+function closeSignin(){
+  if(mustSignIn()){ showSignin("signin"); return; }
+  const g=document.getElementById("loginGate"); if(g) g.style.display="none";
+}
 function siBtn(label,onclick,cls,id){ return '<button type="'+(onclick?"button":"submit")+'" class="btn'+(cls?" "+cls:"")+' sibtn"'+(id?' id="'+id+'"':'')+(onclick?' onclick="'+onclick+'"':'')+'>'+label+'</button>'; }
 function showSignin(screen,info){
   const g=document.getElementById("loginGate"), b=document.getElementById("siBody"); if(!g||!b) return;
@@ -242,8 +294,7 @@ function showSignin(screen,info){
       '<input id="siEmail" class="search" type="email" autocomplete="email" inputmode="email" placeholder="you@email.com" aria-label="Email" value="'+em+'">'+
       '<p class="sismall siprivacy">We use your email to sign you in and save your progress. See our <a href="https://leanguitarist.com/privacy-policy" target="_blank" rel="noopener">Privacy policy</a>.</p>'+
       siBtn("Send me a code","", "", "siSend")+'</form>'+
-      siBtn("Keep using it without signing in","keepWithout()","ghost")+
-      '<p class="sismall">Without signing in, your progress stays on this device only.</p>';
+      '<p class="sismall">Anything you already ticked on this device moves into your account when you sign in.</p>';
   } else if(screen==="code"){
     h='<div class="k">Check your email</div>'+
       '<h2 class="gateh" id="siTitle">Enter the code we sent</h2>'+
@@ -272,14 +323,21 @@ function showSignin(screen,info){
       '<p class="gatep">If you bought recently, wait an hour and try again. If it still doesn\'t work, contact us at info@leanguitarist.com.</p>'+
       siBtn("Try another email","showSignin('signin')")+
       '<a class="btn ghost sibtn" href="https://leanguitarist.com" target="_blank" rel="noopener">Visit leanguitarist.com</a>'+
-      siBtn("Keep using it without signing in","keepWithout()","ghost")+
       (info.signOutFailed?'<p class="sismall">We couldn\'t finish signing you out on this device. Nothing will be saved to this email, and we\'ll try again next time.</p>':'');
   } else if(screen==="checkerror"){
     h='<div class="k">Signed in as '+em+'</div>'+
       '<h2 class="gateh" id="siTitle">We couldn\'t check your purchase just now</h2>'+
       '<p class="gatep">Please check your connection and try again. Your progress on this device is safe.</p>'+
       siBtn("Try again","retryCheck()","","siRetry")+
-      siBtn("Keep using it without signing in","signOutAndClose()","ghost");
+      siBtn("Back to the app","closeSignin()","ghost")+
+      siBtn("Sign out","signOutAndClose()","ghost");
+  } else if(screen==="offline"){
+    /* Signed in on this device, but the session can't be refreshed until the
+       connection is back (see recoverStoredSession). */
+    h='<div class="k">Signed in</div>'+
+      '<h2 class="gateh" id="siTitle">You\'re offline</h2>'+
+      '<p class="gatep">Keep practising. Your progress saves on this device and goes to your account when you\'re back online.</p>'+
+      siBtn("Back to the app","closeSignin()");
   } else if(screen==="account"){
     h='<div class="k">Signed in</div>'+
       '<h2 class="gateh" id="siTitle">Your progress is saved</h2>'+
@@ -289,6 +347,7 @@ function showSignin(screen,info){
       siBtn("Sign out","signOut()","ghost");
   }
   b.innerHTML=h;
+  g.dataset.screen=screen;
   if(screen==="notbuyer") pendingEmail="";
   g.style.display="flex";
   const first=b.querySelector("input")||b.querySelector("button");
