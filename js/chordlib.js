@@ -117,7 +117,7 @@ function chordShape(name){
 function chordDiagram(name){
   const sh = chordShape(name);
   if (!sh) return '<div class="sbnote">Moveable/barre shape. Use the pattern shown for its open cousin, moved up the neck.</div>';
-  const W = 126, H = 150, x0 = 24, dx = 16.5, y0 = 30, dy = 26, rows = 4;
+  const W = 126, H = 150, x0 = 34, dx = 15.5, y0 = 30, dy = 26, rows = 4;
   const fretted = sh.frets.filter(v => v && v > 0);
   const top = fretted.length ? Math.max(...fretted) : 0;
   const base = top > rows ? Math.min(...fretted) : 1;
@@ -126,19 +126,19 @@ function chordDiagram(name){
   s += '<rect x="' + x0 + '" y="' + y0 + '" width="' + dx * 5 + '" height="' + dy * rows + '" fill="#fff"/>';
   for (let f = 0; f <= rows; f++) { const y = y0 + f * dy; s += '<line x1="' + x0 + '" y1="' + y + '" x2="' + (x0 + dx * 5) + '" y2="' + y + '" stroke="#cbb89a" stroke-width="' + (f === 0 && base === 1 ? 4 : 1.4) + '"/>'; }
   for (let i = 0; i < 6; i++) s += '<line x1="' + X(i) + '" y1="' + y0 + '" x2="' + X(i) + '" y2="' + (y0 + dy * rows) + '" stroke="#b9a98c" stroke-width="1.4"/>';
-  if (base > 1) s += '<text x="' + (x0 - 6) + '" y="' + (Y(base) + 4) + '" text-anchor="end" font-size="11" font-weight="700" fill="#6b6258" font-family="Open Sans">' + base + 'fr</text>';
+  if (base > 1) s += '<text x="' + (x0 - 12) + '" y="' + (Y(base) + 4) + '" text-anchor="end" font-size="11" font-weight="700" fill="#6b6258" font-family="Open Sans">' + base + 'fr</text>';
   for (let i = 0; i < 6; i++) { const v = sh.frets[i];
     if (v === null) s += '<text x="' + X(i) + '" y="' + (y0 - 7) + '" text-anchor="middle" font-size="13" fill="#b6ada0" font-family="Open Sans">x</text>';
     else if (v === 0) s += '<circle cx="' + X(i) + '" cy="' + (y0 - 11) + '" r="4.5" fill="none" stroke="#555" stroke-width="1.4"/>';
   }
   const b = sh.barre;
-  if (b) s += '<rect x="' + (X(b.from) - 8) + '" y="' + (Y(b.fret) - 8) + '" width="' + (X(b.to) - X(b.from) + 16) + '" height="16" rx="8" fill="#d30e0f"/>';
+  if (b) s += '<rect x="' + (X(b.from) - 7.5) + '" y="' + (Y(b.fret) - 7.5) + '" width="' + (X(b.to) - X(b.from) + 15) + '" height="15" rx="7.5" fill="#d30e0f"/>';
   for (let i = 0; i < 6; i++) { const v = sh.frets[i]; if (!(v > 0)) continue;
     const n = sh.fingers[i];
     const onBarre = b && v === b.fret && i >= b.from && i <= b.to && n === 1;
     if (onBarre && i !== b.from) continue;   // one number for the whole barre, at its low end
-    if (!onBarre) s += '<circle cx="' + X(i) + '" cy="' + Y(v) + '" r="8" fill="#d30e0f"/>';
-    if (n) s += '<text x="' + X(i) + '" y="' + (Y(v) + 3.6) + '" text-anchor="middle" font-size="10.5" font-weight="700" fill="#fff" font-family="Open Sans">' + n + '</text>';
+    if (!onBarre) s += '<circle cx="' + X(i) + '" cy="' + Y(v) + '" r="7.3" fill="#d30e0f"/>';
+    if (n) s += '<text x="' + X(i) + '" y="' + (Y(v) + 3.5) + '" text-anchor="middle" font-size="10" font-weight="700" fill="#fff" font-family="Open Sans">' + n + '</text>';
   }
   return s + '</svg>';
 }
