@@ -62,6 +62,10 @@ function plWeekMinutes(totals,today){
   for(let i=0;i<7;i++){ const d=plAddDays(wk,i); out.push({d, min:Math.round(((totals[d]||{}).secs||0)/60), future:d>today}); }
   return out;
 }
+/* Minutes this week, Monday to Sunday: the week's seconds, rounded once. */
+function plWeekTotal(totals,today){
+  const wk=plWeekStart(today); let s=0; for(let i=0;i<7;i++) s+=((totals[plAddDays(wk,i)]||{}).secs||0); return Math.round(s/60);
+}
 /* Minutes in the last n days, today included. */
 function plMinutesLast(totals,today,n){
   let s=0; for(let i=0;i<n;i++){ s+=((totals[plAddDays(today,-i)]||{}).secs||0); } return Math.round(s/60);
@@ -69,15 +73,18 @@ function plMinutesLast(totals,today,n){
 /* The campfire-ready score, 0 to 100: the campfire checklist is 60 points, the
    21-day plan 20 points, and the last 7 days' practice 20 points (70 minutes or
    more is full marks). */
+/* Each part is rounded on its own and the total is their sum, so the lines under
+   the score always add up to it. */
 function plScore(campfireTicked,planDaysTicked,minutes7){
   const c=Math.min(Math.max(campfireTicked,0),PL_CAMPFIRE_ITEMS)/PL_CAMPFIRE_ITEMS*60;
   const p=Math.min(Math.max(planDaysTicked,0),PL_PLAN_DAYS)/PL_PLAN_DAYS*20;
   const m=Math.min(Math.max(minutes7,0),PL_WEEK_TARGET_MIN)/PL_WEEK_TARGET_MIN*20;
-  return {total:Math.round(c+p+m), campfire:Math.round(c), plan:Math.round(p), practice:Math.round(m)};
+  const parts={campfire:Math.round(c), plan:Math.round(p), practice:Math.round(m)};
+  return {total:parts.campfire+parts.plan+parts.practice, campfire:parts.campfire, plan:parts.plan, practice:parts.practice};
 }
 
 if(typeof module!=="undefined" && module.exports){
-  module.exports={plYmd,plAddDays,plWeekday,plWeekStart,plDayTotals,plPractised,plStreak,plWeekMinutes,plMinutesLast,plScore};
+  module.exports={plYmd,plAddDays,plWeekday,plWeekStart,plDayTotals,plPractised,plStreak,plWeekMinutes,plWeekTotal,plMinutesLast,plScore};
 }
 
 /* ============ THE LOG ON THIS DEVICE ============ */
@@ -104,13 +111,13 @@ function plChanged(){ if(typeof renderHome==="function") renderHome(); }
 
 /* Adds one entry. kind: one of PL_KINDS; seconds: 1 to 21600 (0 for a tick);
    routineDay: 1 to 21 or null. For other features too (metronome, routine, play-along). */
-function plAdd(kind,seconds,routineDay,id,day){
+function plAdd(kind,seconds,routineDay,id,day,owner){
   if(PL_KINDS.indexOf(kind)<0) return null;
   let s=Math.round(Number(seconds)||0);
   if(kind!=="tick" && s<1) return null;
   s=Math.min(Math.max(s,0),21600);
   const r=(routineDay>=1&&routineDay<=21)?Math.round(routineDay):null;
-  const e={id:id||plUuid(), d:day||plToday(), k:kind, s:kind==="tick"?0:s, r, at:new Date().toISOString(), u:plSignedIn()?sbUser.id:null, st:0};
+  const e={id:id||plUuid(), d:day||plToday(), k:kind, s:kind==="tick"?0:s, r, at:new Date().toISOString(), u:owner!==undefined?owner:(plSignedIn()?sbUser.id:null), st:0};
   const a=plLoad(); if(a.some(x=>x.id===e.id)) return null;
   a.push(e); plSave(plPrune(a)); plChanged(); plSync(); return e;
 }
@@ -136,36 +143,61 @@ function plSummary(){
   let cf=0; if(typeof CAMPFIRE!=="undefined") CAMPFIRE.forEach((g,gi)=>g.items.forEach((_,ii)=>{ if(campfireDone[gi+"-"+ii]) cf++; }));
   let plan=0; for(let d=1;d<=21;d++) if(typeof practiceDone!=="undefined" && practiceDone[d]) plan++;
   const min7=plMinutesLast(totals,today,7);
-  return {today, totals, streak:plStreak(totals,today), week:plWeekMinutes(totals,today), min7,
+  return {today, totals, streak:plStreak(totals,today), week:plWeekMinutes(totals,today), weekMin:plWeekTotal(totals,today), min7,
     campfire:cf, plan, score:plScore(cf,plan,min7)};
 }
 
 /* ============ THE PRACTICE TIMER ============ */
-/* js/fingers.js calls these. The seconds the timer counted are kept on the device
-   while it runs, so a page closed mid-session still logs what was done. */
-function plTimerStart(){ plStore().set(PL_RUN_KEY,{id:plUuid(), d:plToday(), s:0}); }
-function plTick(){
-  const run=plStore().get(PL_RUN_KEY,null); if(!run) return;
-  run.s++; plStore().set(PL_RUN_KEY,run);
+/* js/fingers.js calls these. While a run goes on, its seconds so far are kept on the
+   device under its own key ("lg_plog_run:<id>") with the account it started under and
+   a heartbeat, so a page closed mid-session still logs what was done. It is written
+   with localStorage directly (not LS.set). Another tab or the next start logs a run
+   only when its heartbeat is over 3 minutes old (a hidden tab can be held back up to
+   a minute), and plAdd() never logs the same run id twice. */
+const PL_RUN_PREFIX="lg_plog_run:", PL_RUN_STALE_MS=180000;
+let plRunId=null;
+function plRunGet(id){ try{ return JSON.parse(localStorage.getItem(PL_RUN_PREFIX+id)); }catch(_){ return null; } }
+function plRunPut(run){ try{ localStorage.setItem(PL_RUN_PREFIX+run.id,JSON.stringify(run)); }catch(_){} }
+function plRunDrop(id){ try{ localStorage.removeItem(PL_RUN_PREFIX+id); }catch(_){} }
+function plTimerStart(){
+  const run={id:plUuid(), d:plToday(), s:0, u:plSignedIn()?sbUser.id:null, hb:Date.now()};
+  plRunId=run.id; plRunPut(run);
+}
+/* counted: the seconds this run has counted so far (from the clock). */
+function plTick(counted){
+  if(!plRunId) return;
+  const run=plRunGet(plRunId)||{id:plRunId, d:plToday(), s:0, u:plSignedIn()?sbUser.id:null};
+  run.s=Math.max(run.s||0, Math.round(Number(counted)||0)); run.hb=Date.now(); plRunPut(run);
   if(typeof homeTimerTick==="function") homeTimerTick();
 }
 function plTimerStop(){
-  const run=plStore().get(PL_RUN_KEY,null);
-  try{ localStorage.removeItem(PL_RUN_KEY); }catch(_){}
-  if(run && run.s>0) plAdd("timer",run.s,null,run.id,run.d);
+  const id=plRunId; plRunId=null; if(!id){ plChanged(); return; }
+  const run=plRunGet(id); plRunDrop(id);
+  if(run && run.s>0) plAdd("timer",run.s,null,run.id,run.d,run.u===undefined?null:run.u);
   else plChanged();
 }
-(function plRecoverRun(){ /* the page was closed while the timer ran */
-  const run=plStore().get(PL_RUN_KEY,null);
-  if(run){ try{ localStorage.removeItem(PL_RUN_KEY); }catch(_){} if(run.s>0) setTimeout(()=>plAdd("timer",run.s,null,run.id,run.d),0); }
-})();
+function plRecoverRuns(){ /* runs left by a page that was closed while its timer ran */
+  const now=Date.now(), found=[];
+  try{ for(let i=0;i<localStorage.length;i++){ const k=localStorage.key(i); if(k && k.indexOf(PL_RUN_PREFIX)===0) found.push(k.slice(PL_RUN_PREFIX.length)); } }catch(_){ return; }
+  found.forEach(id=>{
+    if(id===plRunId) return;
+    const run=plRunGet(id);
+    if(!run){ plRunDrop(id); return; }
+    if(now-(run.hb||0)<PL_RUN_STALE_MS) return; /* still running in another tab */
+    plRunDrop(id);
+    if(run.s>0) plAdd("timer",run.s,null,run.id,run.d,run.u===undefined?null:run.u);
+  });
+}
+setTimeout(plRecoverRuns,0);
 
 /* ============ SENDING TO THE ACCOUNT ============ */
 let plBusy=false, plAgain=false, plRetryTimer=null, plRetryWait=0, plLastPull=0;
 const PL_PERMANENT=["22008","23514","22P02","22007","23502"]; /* a row the server will never take */
 function plOpsErr(task,e){ try{ if(window.LGOps) LGOps.logError(task,e); }catch(_){} }
 function plOpsCost(task){ try{ if(window.LGOps) LGOps.logCost(task,"supabase:call",1); }catch(_){} }
-function plRow(e){ return {id:e.id, day:e.d, kind:e.k, seconds:e.s, routine_day:e.r, logged_at:e.at}; }
+function plRow(e){ return {id:e.id, user_id:e.u, day:e.d, kind:e.k, seconds:e.s, routine_day:e.r, logged_at:e.at}; }
+/* Every request belongs to the account the sync started for; it stops when that changes. */
+function plStill(uid){ return plSignedIn() && sbUser.id===uid; }
 function plMark(ids,st){ const set={}; ids.forEach(i=>set[i]=1); const a=plLoad(); a.forEach(e=>{ if(set[e.id]) e.st=st; }); plSave(a); }
 
 async function plSync(){
@@ -178,29 +210,32 @@ async function plSync(){
     const a=plLoad(); let moved=false; a.forEach(e=>{ if(!e.u){ e.u=uid; moved=true; } }); if(moved) plSave(a);
     const waiting=plLoad().filter(e=>e.u===uid && e.st===0);
     for(let i=0;i<waiting.length;i+=50){
+      if(!plStill(uid)) return;
       const batch=waiting.slice(i,i+50);
       plOpsCost("practice log: send");
       const {error}=await sb.from("practice_log").upsert(batch.map(plRow),{onConflict:"id",ignoreDuplicates:true});
       if(!error){ plMark(batch.map(e=>e.id),1); continue; }
       if(PL_PERMANENT.indexOf(String(error.code))<0) throw error;
       for(const e of batch){ /* find the row the server refuses; keep it on this device only */
+        if(!plStill(uid)) return;
         const r=await sb.from("practice_log").upsert([plRow(e)],{onConflict:"id",ignoreDuplicates:true});
         if(!r.error) plMark([e.id],1);
         else if(PL_PERMANENT.indexOf(String(r.error.code))>=0){ plMark([e.id],2); plOpsErr("practice log: refused",r.error); }
         else throw r.error;
       }
     }
-    if(!plSignedIn() || sbUser.id!==uid) return;
+    if(!plStill(uid)) return;
     /* read back this account's entries from the last 400 days (every device) */
     const from=plAddDays(plToday(),-400), rows=[];
     for(let off=0; off<20000; off+=1000){
+      if(!plStill(uid)) return;
       plOpsCost("practice log: read");
       const {data,error}=await sb.from("practice_log").select("id,day,kind,seconds,routine_day").gte("day",from).order("day").order("id").range(off,off+999);
       if(error) throw error;
       (data||[]).forEach(x=>rows.push({id:x.id,d:x.day,k:x.kind,s:x.seconds,r:x.routine_day}));
       if(!data || data.length<1000) break;
     }
-    if(!plSignedIn() || sbUser.id!==uid) return;
+    if(!plStill(uid)) return;
     plStore().set(plSrvKey(uid),rows); plLastPull=Date.now();
     plRetryWait=0; if(plRetryTimer){ clearTimeout(plRetryTimer); plRetryTimer=null; }
     plChanged();

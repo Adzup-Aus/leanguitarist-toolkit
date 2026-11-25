@@ -121,7 +121,7 @@ left", "campfire-ready score"; progress: "streak (2 rest days a week allowed)").
   days left this week" is 2 minus the rest days already used this week.
 - **The campfire-ready score**, 0 to 100: the campfire checklist 60 points (ticked of 19), the
   21-day plan 20 points (days done of 21), and the last 7 days' practice 20 points (70 minutes,
-  10 a day, is full marks). When the live coach (F8) measures strum timing, it can take a share
+  10 a day, is full marks). Each part is rounded to a whole number and the score is their sum. When the live coach (F8) measures strum timing, it can take a share
   of these points; that change is F8's.
 
 Examples (25 November 2026 is a Wednesday; its week is Monday 23 to Sunday 29 November):
@@ -148,8 +148,13 @@ Examples (25 November 2026 is a Wednesday; its week is Monday 23 to Sunday 29 No
 | 15 | 19 | 21 | 70 or more | 100 |
 | 16 | 19 | 21 | 0 | 80 |
 
+| 17 | 5 | 3 | 58 | 36 (16 + 3 + 17: each part is rounded, and the score is their sum) |
+
 Minutes: 12 minutes 30 seconds Monday, 10 minutes Tuesday and 5 minutes Wednesday show as 13,
-10 and 5 on this week's chart; a 5-minute and a 7-minute run on one day show as 12.
+10 and 5 on this week's chart; a 5-minute and a 7-minute run on one day show as 12. The week's
+total adds the seconds first and rounds once: two 30-second runs on two days show 1 on each
+day's bar and 1 minute for the week. The timer counts from the clock, so a locked phone keeps
+counting.
 
 ## 6. Build tracker
 

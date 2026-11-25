@@ -45,7 +45,7 @@ create policy "practice_log: read own rows" on public.practice_log
 create policy "practice_log: insert own rows" on public.practice_log
   for insert to authenticated with check (user_id = (select auth.uid()) and exists (select 1 from public.access a where a.email = lower((select auth.jwt()) ->> 'email')));
 
--- Keeps every row honest: the player's own id, a day no more than 60 days back
+-- Keeps every row honest: the player's own id (the app sends it with every row), a day no more than 60 days back
 -- or 1 day ahead of the server's date (a phone offline for weeks still sends
 -- its entries; time zones are up to a day apart), and the device time no later
 -- than the server's.
@@ -55,8 +55,9 @@ language plpgsql
 set search_path = public
 as $$
 begin
-  if auth.role() = 'authenticated' then
-    new.user_id := auth.uid();
+  -- a row for another account is refused, never moved to the signed-in one
+  if auth.role() = 'authenticated' and new.user_id is distinct from auth.uid() then
+    raise exception 'practice_log: row belongs to another account' using errcode = '42501';
   end if;
   if new.day < (now() at time zone 'utc')::date - 60 or new.day > (now() at time zone 'utc')::date + 1 then
     raise exception 'practice_log: day % is out of range', new.day using errcode = '22008';

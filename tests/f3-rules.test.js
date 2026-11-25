@@ -50,12 +50,16 @@ eq("13. minutes: this week Mon-Sun", R.plWeekMinutes(tm,"2026-11-25").map(x=>x.m
 eq("14. two timer runs on one day add up", R.plWeekMinutes(R.plDayTotals([{d:"2026-11-25",k:"timer",s:300},{d:"2026-11-25",k:"timer",s:420}]),"2026-11-25")[2].min, 12);
 eq("15. minutes in the last 7 days", R.plMinutesLast(T({"2026-11-18":20,"2026-11-19":30,"2026-11-25":10}),"2026-11-25",7), 40);
 
+eq("15b. two 30-second runs on two days: each day's bar shows 1, the week shows 1 minute",
+  [R.plWeekMinutes(R.plDayTotals([{d:"2026-11-23",k:"timer",s:30},{d:"2026-11-24",k:"timer",s:30}]),"2026-11-25").map(x=>x.min).slice(0,2), R.plWeekTotal(R.plDayTotals([{d:"2026-11-23",k:"timer",s:30},{d:"2026-11-24",k:"timer",s:30}]),"2026-11-25")], [[1,1],1]);
+eq("15c. this week's total leaves out last week", R.plWeekTotal(T({"2026-11-22":20,"2026-11-23":12.5,"2026-11-25":5}),"2026-11-25"), 18);
 /* score: checklist 60, plan 20, last 7 days' practice 20 (70 minutes = full) */
 eq("16. score: nothing yet", R.plScore(0,0,0), {total:0,campfire:0,plan:0,practice:0});
 eq("17. score: 14 of 19 skills, 9 of 21 days, 45 minutes", R.plScore(14,9,45), {total:66,campfire:44,plan:9,practice:13});
 eq("18. score: everything done and 10 minutes a day", R.plScore(19,21,70), {total:100,campfire:60,plan:20,practice:20});
 eq("19. score: more than 70 minutes still counts 20", R.plScore(19,21,300).total, 100);
 eq("20. score: all checked but no practice this week", R.plScore(19,21,0).total, 80);
+eq("21. score: the three lines add up to the total (5 skills, 3 days, 58 minutes)", R.plScore(5,3,58), {total:36,campfire:16,plan:3,practice:17});
 
 console.log(fails?fails+" failed":"all passed");
 process.exit(fails?1:0);

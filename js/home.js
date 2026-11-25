@@ -35,7 +35,7 @@ function renderHome(){
   const box=document.getElementById("t-home"); if(!box) return;
   const S=plSummary(), now=new Date(), wd=(now.getDay()+6)%7;
   const pd=hmPlanDay(), t=pd?PRACTICE[pd-1]:null, running=hmTimerRunning(), paused=hmPaused();
-  const weekMin=S.week.reduce((a,x)=>a+x.min,0);
+  const weekMin=S.weekMin;
   const signedIn=plSignedIn(), canSign=typeof SYNC_ON!=="undefined" && SYNC_ON;
   box.innerHTML=`
     <div class="tabhead"><div class="k">${HM_DAYS[wd]} ${now.getDate()} ${HM_MONTHS[now.getMonth()]}</div>
