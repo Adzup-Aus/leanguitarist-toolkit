@@ -13,6 +13,7 @@ function hmStreakLine(st){
   return st.restLeft===1?"1 rest day left this week":st.restLeft+" rest days left this week";
 }
 function hmTimerRunning(){ return typeof timerOn!=="undefined" && timerOn; }
+function hmPaused(){ return !hmTimerRunning() && typeof timerLeft!=="undefined" && timerLeft>0 && timerLeft<timerTotal; }
 function hmClockText(){ return (typeof fmt==="function" && typeof timerLeft!=="undefined") ? fmt(Math.max(0,timerLeft)) : ""; }
 
 function hmWeekChart(week,today){
@@ -33,7 +34,7 @@ function hmWeekChart(week,today){
 function renderHome(){
   const box=document.getElementById("t-home"); if(!box) return;
   const S=plSummary(), now=new Date(), wd=(now.getDay()+6)%7;
-  const pd=hmPlanDay(), t=pd?PRACTICE[pd-1]:null, running=hmTimerRunning();
+  const pd=hmPlanDay(), t=pd?PRACTICE[pd-1]:null, running=hmTimerRunning(), paused=hmPaused();
   const weekMin=S.week.reduce((a,x)=>a+x.min,0);
   const signedIn=plSignedIn(), canSign=typeof SYNC_ON!=="undefined" && SYNC_ON;
   box.innerHTML=`
@@ -43,9 +44,10 @@ function renderHome(){
       <div class="k">Today's practice${t?` &middot; day ${pd} of 21`:""}</div>
       <p>${t?esc(t[1]):"Play anything you love. Keep the streak going with 10 minutes a day."}</p>
       <div class="hm-timer">
-        <div class="hm-clock" id="hmClock" aria-live="off">${running?hmClockText():HM_TIMER_MIN+":00"}</div>
-        <button class="btn" id="hmTimerBtn" onclick="hmTimer()">${running?"Pause":"Start "+HM_TIMER_MIN+" minutes"}</button>
+        <div class="hm-clock" id="hmClock" aria-live="off">${running||paused?hmClockText():HM_TIMER_MIN+":00"}</div>
+        <button class="btn" id="hmTimerBtn" onclick="hmTimer()">${running?"Pause":paused?"Resume":"Start "+HM_TIMER_MIN+" minutes"}</button>
       </div>
+      ${paused?`<button class="btn ghost hm-tick" onclick="setTimer(${HM_TIMER_MIN});renderHome()">Start over at ${HM_TIMER_MIN} minutes</button>`:""}
       ${t?`<button class="btn ghost hm-tick" onclick="hmTickToday(${pd})">&#10003; Tick day ${pd} done</button>`:""}
     </div>
     <div class="hm-stats">
@@ -62,7 +64,7 @@ function renderHome(){
 /* The timer here is the same practice timer as on the Fingers screen (js/fingers.js). */
 function hmTimer(){
   if(hmTimerRunning()){ stopTimer(); renderHome(); return; }
-  if(!(typeof timerLeft!=="undefined" && timerLeft>0 && timerLeft<timerTotal && timerTotal===HM_TIMER_MIN*60)) setTimer(HM_TIMER_MIN);
+  if(!hmPaused()) setTimer(HM_TIMER_MIN); /* a paused run (here or on Fingers) carries on */
   startTimer(); renderHome();
 }
 function homeTimerTick(){
