@@ -1,0 +1,237 @@
+/* F7 play-along: the app's own drum and bass loop under a library song's chords, with a speed
+   slider. Everything is made in the browser with Web Audio (uses ensureAudio, ctx, master and
+   noiseBuf from core.js). No recording, melody or lyrics: only the song's chord progression and
+   its strum style from js/data.js. Each chord lasts one bar of 4 beats, as on the Songs tab.
+
+   Timing: a look-ahead scheduler on the audio clock, eighth-note steps. It sits behind a small
+   clock interface (start/stop/setBpm/onTick); paClock() uses F5's shared clock (js/clock.js,
+   LGClock.create) through an adapter when it is loaded, and this scheduler otherwise. */
+
+/* ---------- clock (fallback until js/clock.js lands) ---------- */
+const PAFallbackClock=(function(){
+  let timer=null, bpm=80, sub=2, next=0, step=0, subs=[];
+  const AHEAD=0.12, EVERY=25;
+  function stepDur(){ return 60/bpm/sub; }
+  function pump(){
+    /* fallen behind (a stalled tab): skip the missed steps on the grid instead of playing them late */
+    if(next < ctx.currentTime-0.05){ const sd=stepDur(), k=Math.ceil((ctx.currentTime+0.03-next)/sd); next+=k*sd; step+=k; }
+    while(next < ctx.currentTime+AHEAD){
+      const t=next, s=step;
+      subs.slice().forEach(fn=>{ try{ fn(t,s); }catch(e){ if(window.LGOps&&LGOps.logError) LGOps.logError("playalong tick",e); } });
+      next+=stepDur(); step++;
+    }
+  }
+  return {
+    start(o){ o=o||{}; ensureAudio(); this.stop(); bpm=o.bpm||bpm; sub=o.subdivision||2; step=0; next=ctx.currentTime+0.08; pump(); timer=setInterval(pump,EVERY); },
+    stop(){ if(timer) clearInterval(timer); timer=null; },
+    setBpm(n){ bpm=n; },
+    isRunning(){ return !!timer; },
+    onTick(fn){ subs.push(fn); return ()=>{ subs=subs.filter(f=>f!==fn); }; }
+  };
+})();
+/* F5's shared clock (js/clock.js): LGClock.create({bpm, beatsPerBar, subdivision, onSchedule})
+   returns a clock with start/stop/setBpm/running; onSchedule(tick) gets {time, index, ...}.
+   This adapter gives it the same shape as PAFallbackClock. */
+let paLGAdapter=null;
+function paMakeLGAdapter(){
+  let clock=null, subs=[];
+  return {
+    start(o){ o=o||{}; this.stop();
+      clock=LGClock.create({bpm:o.bpm||80, beatsPerBar:4, subdivision:o.subdivision||2,
+        onSchedule:t=>{ subs.slice().forEach(fn=>{ try{ fn(t.time,t.index); }catch(e){ if(window.LGOps&&LGOps.logError) LGOps.logError("playalong tick",e); } }); }});
+      clock.start(); },
+    stop(){ if(clock){ clock.stop(); clock=null; } },
+    setBpm(n){ if(clock) clock.setBpm(n); },
+    isRunning(){ return !!(clock&&clock.running); },
+    onTick(fn){ subs.push(fn); return ()=>{ subs=subs.filter(f=>f!==fn); }; }
+  };
+}
+function paClock(){
+  if(typeof LGClock!=="undefined"&&LGClock&&typeof LGClock.create==="function") return paLGAdapter||(paLGAdapter=paMakeLGAdapter());
+  return PAFallbackClock;
+}
+
+/* ---------- sounds ---------- */
+function paKick(t,v){
+  const o=ctx.createOscillator(), g=ctx.createGain(); o.type="sine";
+  o.frequency.setValueAtTime(150,t); o.frequency.exponentialRampToValueAtTime(45,t+0.12);
+  g.gain.setValueAtTime(0.0001,t); g.gain.exponentialRampToValueAtTime(0.9*v,t+0.004); g.gain.exponentialRampToValueAtTime(0.001,t+0.32);
+  o.connect(g).connect(paBus.drums); o.start(t); o.stop(t+0.34);
+}
+function paNoise(t,dur,type,freq,q,vol){
+  const s=ctx.createBufferSource(); s.buffer=noiseBuf;
+  const f=ctx.createBiquadFilter(); f.type=type; f.frequency.value=freq; f.Q.value=q;
+  const g=ctx.createGain(); g.gain.setValueAtTime(vol,t); g.gain.exponentialRampToValueAtTime(0.001,t+dur);
+  s.connect(f).connect(g).connect(paBus.drums); s.start(t); s.stop(t+Math.min(dur+0.02,0.2));
+}
+function paSnare(t,v){
+  paNoise(t,0.16,"highpass",1400,0.7,0.42*v);
+  const o=ctx.createOscillator(), g=ctx.createGain(); o.type="triangle"; o.frequency.setValueAtTime(190,t);
+  g.gain.setValueAtTime(0.25*v,t); g.gain.exponentialRampToValueAtTime(0.001,t+0.08);
+  o.connect(g).connect(paBus.drums); o.start(t); o.stop(t+0.1);
+}
+function paRim(t,v){ paNoise(t,0.05,"bandpass",2200,3,0.5*v); }
+function paHat(t,v){ paNoise(t,0.045,"highpass",7000,0.8,0.16*v); }
+function paShaker(t,v){ paNoise(t,0.07,"bandpass",5200,1.2,0.12*v); }
+function paCount(t,hi){
+  const o=ctx.createOscillator(), g=ctx.createGain(); o.type="square"; o.frequency.value=hi?1500:1000;
+  g.gain.setValueAtTime(0.0001,t); g.gain.exponentialRampToValueAtTime(0.18,t+0.002); g.gain.exponentialRampToValueAtTime(0.001,t+0.05);
+  o.connect(g).connect(paBus.click); o.start(t); o.stop(t+0.06);
+}
+const PA_NOTE={C:0,"C#":1,Db:1,D:2,"D#":3,Eb:3,E:4,F:5,"F#":6,Gb:6,G:7,"G#":8,Ab:8,A:9,"A#":10,Bb:10,B:11};
+function paRootFreq(chord,fifth){
+  const m=/^([A-G][#b]?)/.exec(chord||"G"); let n=m?PA_NOTE[m[1]]:7; if(fifth) n+=7;
+  /* bass range E1 (41 Hz) to D#2 */
+  let semis=((n-4)%12+12)%12; return 41.2*Math.pow(2,semis/12);
+}
+function paBass(t,chord,dur,fifth,v){
+  const f=paRootFreq(chord,fifth);
+  const o=ctx.createOscillator(); o.type="sawtooth"; o.frequency.value=f;
+  const o2=ctx.createOscillator(); o2.type="sine"; o2.frequency.value=f;
+  const lp=ctx.createBiquadFilter(); lp.type="lowpass"; lp.frequency.setValueAtTime(700,t); lp.frequency.exponentialRampToValueAtTime(220,t+dur); lp.Q.value=2;
+  const g=ctx.createGain(); g.gain.setValueAtTime(0.0001,t); g.gain.exponentialRampToValueAtTime(0.32*v,t+0.01); g.gain.setValueAtTime(0.3*v,t+dur*0.7); g.gain.exponentialRampToValueAtTime(0.001,t+dur);
+  o.connect(lp); o2.connect(lp); lp.connect(g).connect(paBus.bass);
+  o.start(t); o2.start(t); o.stop(t+dur+0.02); o2.stop(t+dur+0.02);
+  paBassNotes.push({g:g,start:t,end:t+dur,peak:0.32*v});
+}
+/* bass notes still sounding or queued, so a speed change can end them before the new downbeat */
+let paBassNotes=[];
+function paCutBass(){
+  if(!ctx) return; const now=ctx.currentTime;
+  paBassNotes=paBassNotes.filter(n=>n.end>now);
+  paBassNotes.forEach(n=>{ if(n.cut) return; n.cut=true;
+    const at=Math.max(now+0.005,n.start+0.012), p=n.g.gain;
+    if(p.cancelAndHoldAtTime) p.cancelAndHoldAtTime(at); else { p.cancelScheduledValues(at); p.setValueAtTime(n.peak,at); }
+    p.linearRampToValueAtTime(0.0001,at+0.03); n.end=at+0.03; });
+}
+
+/* ---------- grooves, one per strum style: 8 eighth-note steps per bar ----------
+   k kick, s snare, r rim, h hat, z shaker; bass: R root, F fifth, - rest; length in steps */
+const PA_GROOVES={
+  Rock:  {k:"x---x-x-", s:"--x---x-", h:"xxxxxxxx", bass:"RRRRRRRR", blen:1},
+  Basic: {k:"x---x---", s:"--x---x-", h:"x-x-x-x-", bass:"R---F---", blen:3},
+  Folk:  {k:"x---x---", r:"--x---x-", z:"xxxxxxxx", bass:"R---F---", blen:2},
+  Ballad:{k:"x-----x-", s:"----x---", h:"x-x-x-x-", bass:"R-----F-", blen:5},
+  Island:{k:"----x---", r:"----x---", h:"-x-x-x-x", bass:"R--R-R--", blen:1.5},
+  Percussive:{k:"x---x---", s:"--x---x-", h:"x-x-x-x-", bass:"R---R---", blen:2}
+};
+
+/* ---------- state ---------- */
+let paBus=null;   /* this run's buses; every note of a run goes through them */
+let paRun=null;   /* this run's output gain: buses -> paRun -> master */
+let pa={open:false,song:null,chords:[],groove:null,pat:null,bpm:80,playing:false,unsub:null,parts:{drums:true,bass:true,guide:true},countIn:true,runCount:8,uiTimers:[]};
+/* a fresh set of buses and a fresh run gain for each Play, so Stop can silence notes already
+   scheduled (ramp the run gain to 0, then disconnect it) without touching the next run */
+function paBuses(){
+  ensureAudio();
+  paRun=ctx.createGain(); paRun.gain.value=1; paRun.connect(master);
+  paBus={drums:ctx.createGain(),bass:ctx.createGain(),guide:ctx.createGain(),click:ctx.createGain()};
+  paBus.drums.gain.value=pa.parts.drums?0.75:0; paBus.bass.gain.value=pa.parts.bass?0.9:0;
+  paBus.guide.gain.value=pa.parts.guide?0.55:0; paBus.click.gain.value=0.8;
+  Object.values(paBus).forEach(b=>b.connect(paRun));
+}
+function paSilenceRun(){
+  if(!paRun) return; const g=paRun, r=ctx.currentTime;
+  g.gain.cancelScheduledValues(r); g.gain.setValueAtTime(g.gain.value,r); g.gain.linearRampToValueAtTime(0,r+0.02);
+  setTimeout(()=>{ try{ g.disconnect(); }catch(e){} },80);
+  paRun=null;
+}
+function paSetParts(){ if(!paBus) return; const r=ctx.currentTime;
+  paBus.drums.gain.setTargetAtTime(pa.parts.drums?0.75:0,r,0.02);
+  paBus.bass.gain.setTargetAtTime(pa.parts.bass?0.9:0,r,0.02);
+  paBus.guide.gain.setTargetAtTime(pa.parts.guide?0.55:0,r,0.02);
+}
+
+/* the guide strum: the song's own strum pattern, quietly, on the guide bus */
+function paGuide(t,chord,dir){
+  const sh=(CHORDS[chord]||CHORDS.G).shape; let f=chordFreqs(sh); if(dir==="U") f=f.slice().reverse();
+  const save=master; master=paBus.guide; /* pluck() connects to master */
+  try{ f.forEach((fr,i)=>pluck(fr,t+i*0.012,dir==="U"?0.7:0.9)); } finally { master=save; }
+}
+
+/* one eighth-note step of the loop */
+function paTick(t,step){
+  const COUNT=pa.runCount; /* a one-bar count-in (4 clicks), fixed when Play was pressed */
+  if(step<COUNT){ if(step%2===0){ paCount(t,step===0); paUi(t,{count:4-step/2}); } return; }
+  const s=step-COUNT, i=s%8, bar=Math.floor(s/8), ci=bar%pa.chords.length, chord=pa.chords[ci];
+  const g=pa.groove, sd=60/pa.bpm/2;
+  if(g.k&&g.k[i]==="x") paKick(t,i===0?1:0.85);
+  if(g.s&&g.s[i]==="x") paSnare(t,1);
+  if(g.r&&g.r[i]==="x") paRim(t,1);
+  if(g.h&&g.h[i]==="x") paHat(t,i%2?0.7:1);
+  if(g.z&&g.z[i]==="x") paShaker(t,i%2?0.7:1);
+  const b=g.bass[i]; if(b==="R"||b==="F") paBass(t,chord,sd*Math.min(g.blen,8-i)*0.95,b==="F",i===0?1:0.85); /* never past the bar line */
+  const d=pa.pat.steps[i]; if(d==="D"||d==="U") paGuide(t,chord,d);
+  if(i%2===0) paUi(t,{ci:ci,beat:i/2,bar:bar});
+}
+
+/* draw at the moment the step sounds */
+function paUi(t,info){
+  const ms=Math.max(0,(t-ctx.currentTime)*1000);
+  const h=setTimeout(()=>{ pa.uiTimers=pa.uiTimers.filter(x=>x!==h); paDraw(info); },ms);
+  pa.uiTimers.push(h);
+}
+function paDraw(info){
+  if(!pa.open) return;
+  const st=document.getElementById("paStatus");
+  if(info.count!=null){ if(st) st.textContent="Count-in: "+info.count; paMark(-1,-1); return; }
+  if(st) st.textContent="Bar "+(info.bar+1)+"  ·  next: "+pa.chords[(info.ci+1)%pa.chords.length];
+  paMark(info.ci,info.beat);
+}
+function paMark(ci,beat){
+  document.querySelectorAll("#paChords .pach").forEach((el,i)=>el.classList.toggle("now",i===ci));
+  document.querySelectorAll("#paBeats span").forEach((el,i)=>el.classList.toggle("on",i===beat));
+}
+
+/* ---------- controls ---------- */
+function paPlay(){
+  if(pa.playing) return;
+  seqStop(); document.querySelectorAll(".play.playing").forEach(b=>{b.classList.remove("playing");b.innerHTML=PLAY_SVG;});
+  paBuses(); pa.runCount=pa.countIn?8:0;
+  const clk=paClock(); pa.unsub=clk.onTick(paTick); clk.start({bpm:pa.bpm,subdivision:2});
+  pa.playing=true; paButtons();
+}
+function paStop(){
+  const clk=paClock(); if(pa.unsub){ pa.unsub(); pa.unsub=null; } if(pa.playing) clk.stop();
+  pa.uiTimers.forEach(clearTimeout); pa.uiTimers=[]; paSilenceRun();
+  pa.playing=false; paButtons(); paMark(-1,-1);
+  const st=document.getElementById("paStatus"); if(st) st.textContent="Stopped";
+}
+function paToggle(){ pa.playing?paStop():paPlay(); }
+function paButtons(){ const b=document.getElementById("paGo"); if(b){ b.innerHTML=pa.playing?STOP_SVG+" Stop":PLAY_SVG+" Play along"; b.classList.toggle("playing",pa.playing); } }
+function paSpeed(v){ pa.bpm=+v; const o=document.getElementById("paBpm"); if(o) o.textContent=v; if(pa.playing){ paCutBass(); paClock().setBpm(pa.bpm); } }
+function paPart(k,btn){ pa.parts[k]=!pa.parts[k]; btn.classList.toggle("on",pa.parts[k]); paSetParts(); }
+function paCountToggle(btn){ pa.countIn=!pa.countIn; btn.classList.toggle("on",pa.countIn); }
+
+function openPlayAlong(encK){
+  const k=decodeURIComponent(encK); const s=SONGS.find(x=>songKey(x)===k); if(!s) return;
+  if(pa.playing) paStop();
+  pa.song=s; pa.chords=s.progression.split("-").map(x=>x.trim()).filter(Boolean);
+  pa.pat=PATTERNS.find(p=>p.id===s.strum)||PATTERNS[0];
+  pa.groove=PA_GROOVES[s.strum]||PA_GROOVES.Basic;
+  let ov=document.getElementById("paOverlay");
+  if(!ov){ ov=document.createElement("div"); ov.id="paOverlay"; ov.className="paov"; ov.setAttribute("role","dialog"); ov.setAttribute("aria-modal","true");
+    ov.addEventListener("click",e=>{ if(e.target===ov) closePlayAlong(); }); document.body.appendChild(ov); }
+  const uniq=[...new Set(pa.chords)];
+  const list=uniq.length>1? uniq.slice(0,-1).join(", ")+" and "+uniq[uniq.length-1] : uniq[0];
+  ov.innerHTML='<div class="pacard">'
+    +'<div class="patop"><div><div class="pak">Play along</div><h3>'+esc(s.title)+'</h3><div class="paa">'+esc(s.artist)+' &middot; '+esc(pa.pat.name||s.strum)+' feel</div></div>'
+    +'<button class="paclose" onclick="closePlayAlong()" aria-label="Close">&times;</button></div>'
+    +'<div class="pachords" id="paChords">'+pa.chords.map(c=>'<button class="pach" onclick="showChordPop(\''+esc(c)+'\')">'+esc(c)+'</button>').join("")+'</div>'
+    +'<div class="pabeats" id="paBeats"><span>1</span><span>2</span><span>3</span><span>4</span></div>'
+    +'<div class="pastatus" id="paStatus">One chord per bar of 4 beats. Strum along when the count-in ends.</div>'
+    +'<button class="btn pago" id="paGo" onclick="paToggle()"></button>'
+    +'<div class="patempo"><span>Slow</span><input type="range" min="50" max="140" step="1" value="'+pa.bpm+'" oninput="paSpeed(this.value)" aria-label="Speed"><span>Fast</span><b><span id="paBpm">'+pa.bpm+'</span> bpm</b></div>'
+    +'<div class="paparts">'
+      +'<button class="chip '+(pa.parts.drums?'on':'')+'" onclick="paPart(\'drums\',this)">Drums</button>'
+      +'<button class="chip '+(pa.parts.bass?'on':'')+'" onclick="paPart(\'bass\',this)">Bass</button>'
+      +'<button class="chip '+(pa.parts.guide?'on':'')+'" onclick="paPart(\'guide\',this)">Guide chords</button>'
+      +'<button class="chip '+(pa.countIn?'on':'')+'" onclick="paCountToggle(this)">Count-in</button>'
+    +'</div>'
+    +'<div class="panote">A backing loop made by the app, arranged for '+esc(list)+'. Turn off Guide chords to play the chords yourself.</div>'
+    +'</div>';
+  paButtons(); pa.open=true; ov.classList.add("show");
+}
+function closePlayAlong(){ paStop(); pa.open=false; const ov=document.getElementById("paOverlay"); if(ov) ov.classList.remove("show"); }
+document.addEventListener("keydown",e=>{ if(pa.open&&e.key==="Escape") closePlayAlong(); });
+document.addEventListener("visibilitychange",()=>{ if(document.hidden&&pa.playing) paStop(); });
