@@ -155,26 +155,36 @@ function plSummary(){
    only when its heartbeat is over 3 minutes old (a hidden tab can be held back up to
    a minute), and plAdd() never logs the same run id twice. */
 const PL_RUN_PREFIX="lg_plog_run:", PL_RUN_STALE_MS=180000;
-let plRunId=null;
+let plRunId=null, plRunMeta=null;
 function plRunGet(id){ try{ return JSON.parse(localStorage.getItem(PL_RUN_PREFIX+id)); }catch(_){ return null; } }
 function plRunPut(run){ try{ localStorage.setItem(PL_RUN_PREFIX+run.id,JSON.stringify(run)); }catch(_){} }
 function plRunDrop(id){ try{ localStorage.removeItem(PL_RUN_PREFIX+id); }catch(_){} }
 function plTimerStart(){
   const run={id:plUuid(), d:plToday(), s:0, u:plSignedIn()?sbUser.id:null, hb:Date.now()};
-  plRunId=run.id; plRunPut(run);
+  plRunId=run.id; plRunMeta={d:run.d,u:run.u}; plRunPut(run);
 }
 /* counted: the seconds this run has counted so far (from the clock). */
 function plTick(counted){
   if(!plRunId) return;
-  const run=plRunGet(plRunId)||{id:plRunId, d:plToday(), s:0, u:plSignedIn()?sbUser.id:null};
+  const run=plRunGet(plRunId)||{id:plRunId, d:plRunMeta.d, s:0, u:plRunMeta.u}; /* put back if another tab logged it */
   run.s=Math.max(run.s||0, Math.round(Number(counted)||0)); run.hb=Date.now(); plRunPut(run);
   if(typeof homeTimerTick==="function") homeTimerTick();
+}
+/* Logs a run's seconds that are not logged yet. A run already logged by another tab
+   (it looked closed while its own tab was suspended) gets only the rest, as a second
+   entry, so finishing it never loses time and never counts any twice. */
+function plLogRun(run){
+  if(!run || !(run.s>0)) return false;
+  const have=plLoad().filter(e=>e.id===run.id || e.of===run.id).reduce((a,e)=>a+(e.s||0),0);
+  const rest=Math.round(run.s-have); if(rest<1) return false;
+  const e=plAdd("timer",rest,null,have?plUuid():run.id,run.d,run.u===undefined?null:run.u);
+  if(e && have){ const a=plLoad(); a.forEach(x=>{ if(x.id===e.id) x.of=run.id; }); plSave(a); }
+  return !!e;
 }
 function plTimerStop(){
   const id=plRunId; plRunId=null; if(!id){ plChanged(); return; }
   const run=plRunGet(id); plRunDrop(id);
-  if(run && run.s>0) plAdd("timer",run.s,null,run.id,run.d,run.u===undefined?null:run.u);
-  else plChanged();
+  if(!plLogRun(run)) plChanged();
 }
 function plRecoverRuns(){ /* runs left by a page that was closed while its timer ran */
   const now=Date.now(), found=[];
@@ -183,12 +193,17 @@ function plRecoverRuns(){ /* runs left by a page that was closed while its timer
     if(id===plRunId) return;
     const run=plRunGet(id);
     if(!run){ plRunDrop(id); return; }
-    if(now-(run.hb||0)<PL_RUN_STALE_MS) return; /* still running in another tab */
+    if(now-(run.hb||0)<PL_RUN_STALE_MS) return; /* maybe still running in another tab: looked at again later */
     plRunDrop(id);
-    if(run.s>0) plAdd("timer",run.s,null,run.id,run.d,run.u===undefined?null:run.u);
+    plLogRun(run);
   });
 }
+/* Looked at on start, every minute, and when the app comes back into view; the
+   minute check also redraws Home when a new day starts. */
+let plDayShown=plToday();
+function plMinuteCheck(){ plRecoverRuns(); const t=plToday(); if(t!==plDayShown){ plDayShown=t; plChanged(); } }
 setTimeout(plRecoverRuns,0);
+if(typeof window!=="undefined" && window.setInterval) setInterval(plMinuteCheck,60000);
 
 /* ============ SENDING TO THE ACCOUNT ============ */
 let plBusy=false, plAgain=false, plRetryTimer=null, plRetryWait=0, plLastPull=0;
@@ -250,6 +265,6 @@ async function plSync(){
 window.addEventListener("online",()=>plSync());
 document.addEventListener("visibilitychange",()=>{
   if(document.visibilityState!=="visible") return;
-  plChanged(); /* a new day may have started */
+  plRecoverRuns(); plDayShown=plToday(); plChanged(); /* a new day may have started */
   if(Date.now()-plLastPull>20000) plSync();
 });
