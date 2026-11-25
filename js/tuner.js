@@ -78,7 +78,7 @@
   /* ---------- the screen ---------- */
   const INST_KEY="lg_tuner_inst";
   const st={open:false,inst:"guitar",auto:true,target:0,done:{},input:null,listening:false,paused:false,
-    raf:0,lastRun:0,starting:false,goodAt:0,peak:0,peakAt:0,prevLvl:0,hist:[],lastHeard:0,inTuneSince:0,mutedUntil:0,pushed:false,opener:null,buf:null,shown:null};
+    raf:0,lastRun:0,starting:false,startId:0,msg:"",goodAt:0,peak:0,peakAt:0,prevLvl:0,hist:[],lastHeard:0,inTuneSince:0,mutedUntil:0,pushed:false,opener:null,buf:null,shown:null};
   try{ const v=localStorage.getItem(INST_KEY); if(v&&INSTRUMENTS[v]) st.inst=v; }catch(e){}
   const $=id=>document.getElementById(id);
   const strings=()=>INSTRUMENTS[st.inst].strings;
@@ -135,6 +135,7 @@
     }).join("");
   }
   function renderMode(msg){
+    if(msg!==undefined) st.msg=msg; msg=st.msg;   // the last message stays until the next renderAll
     const ms=LGMic.state();
     let h;
     if(st.listening){
@@ -169,7 +170,7 @@
     } else hint("Tap a string to hear it.");
     $("tnCents").innerHTML="&nbsp;"; setNeedle(0,"idle");
   }
-  function renderAll(msg){ renderInst(); renderStrings(); renderMode(msg); showTarget(); idleHint(); }
+  function renderAll(msg){ renderInst(); renderStrings(); renderMode(msg||""); showTarget(); idleHint(); }
 
   /* ---------- reference notes (tap mode, and tapping a string while listening) ---------- */
   function playNote(f){
@@ -198,28 +199,39 @@
       text:"Play a string and the tuner shows whether it's too low, too high or in tune."});
     if(!st.open) return;
     if(!ok){ renderAll(); return; }
+    const my=++st.startId;
+    /* Opened without a tap (the #tuner address): the sound engine may wait for
+       one. Check before the microphone is opened, and give it a tap to start. */
+    if(typeof ensureAudio==="function"){
+      ensureAudio();
+      if(ctx.state!=="running") await Promise.race([ctx.resume().catch(()=>{}),new Promise(r=>setTimeout(r,400))]);
+      if(my!==st.startId||!st.open) return;
+      if(ctx.state!=="running"){ st.paused=true; renderAll("Tap to start listening."); return; }
+    }
+    let inp;
     try{
-      st.input=await LGMic.open({fftSize:8192,onEnd:reason=>{
+      inp=await LGMic.open({fftSize:8192,onEnd:reason=>{
+        if(st.input!==inp) return;
         st.input=null; st.listening=false; cancelAnimationFrame(st.raf);
         if(!st.open) return;
         st.paused=reason==="hidden";
         renderAll(reason==="ended"?"The microphone stopped.":"");
       }});
     }catch(e){
+      if(my!==st.startId||!st.open) return;
       if(e&&e.name==="AbortError"){ st.paused=true; renderAll(); return; }
       if(window.LGOps&&LGOps.logError) try{LGOps.logError("tuner",e)}catch(_){}
       renderAll(LGMic.state()==="blocked"||LGMic.state()==="off"?"":"The microphone didn't start.");
       return;
     }
-    if(!st.open){ st.input.close(); st.input=null; return; }
-    /* Opened without a tap (the #tuner address): the sound engine may wait for one. */
-    if(st.input.ctx.state!=="running"){ try{await st.input.ctx.resume()}catch(e){} }
-    if(st.input.ctx.state!=="running"){ st.input.close(); st.input=null; st.paused=true; renderAll("Tap to start listening."); return; }
+    if(my!==st.startId||!st.open){ inp.close(); return; }   // closed or stopped while starting
+    st.input=inp;
     st.buf=new Float32Array(st.input.analyser.fftSize);
     st.listening=true; st.auto=true; st.hist=[]; st.lastHeard=0; st.inTuneSince=0;
     renderAll(); loop();
   }
   function stopListening(msg){
+    st.startId++;                         // a start still in progress is dropped
     cancelAnimationFrame(st.raf);
     if(st.input){ st.input.close(); st.input=null; }
     st.listening=false;

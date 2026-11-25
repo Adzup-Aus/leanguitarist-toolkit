@@ -147,7 +147,7 @@
   let sheetMode="";                       // "ask" or "privacy"
   function dismiss(){ if(sheetMode==="privacy") closePrivacy(); else notNow(); }
   /* For a tool that closes while its sheet is open: hide it, remember nothing. */
-  function cancel(){ privacyReturn=null; closeSheet(false); }
+  function cancel(){ act++; privacyReturn=null; closeSheet(false); }
   function closeSheet(result){
     const el=document.getElementById("micSheet"); if(el) el.classList.remove("show");
     const r=sheetResolve; sheetResolve=null; if(r) r(result);
@@ -193,24 +193,32 @@
     permScreen(opts);
     return new Promise(r=>{ sheetResolve=r; });
   }
+  /* Each Allow or switch press gets a number; "Not now", Done, a background tap,
+     Escape or a tool closing moves the number on, so a browser answer that
+     arrives after the player backed out changes nothing and shows nothing. */
+  let act=0;
+  const stale=my=>{ if(my===act) return false; if(!inputs.size) stopStream(); return true; };
   async function allow(){
+    const my=++act;
     const b=document.getElementById("micAllow"); if(b){ b.disabled=true; b.textContent="Waiting for your browser..."; }
     try{
       audioCtx();                         // inside the tap, so the sound engine may start on iPhone
       await getStream();
+      if(stale(my)) return;
       setPref("yes");
       if(!inputs.size) stopStream();      // open() takes it again; the browser remembers the yes
       closeSheet(true);
     }catch(e){
+      if(stale(my)) return;
       const n=e&&e.name;
-      if(n==="AbortError"){ setPref("yes"); closeSheet(true); return; }
+      if(n==="AbortError"){ setPref("yes"); closeSheet(true); return; }   // allowed, then left the app
       if(n==="NotAllowedError"||n==="SecurityError"||n==="PermissionDeniedError"){ browserPerm="denied"; emit(); permScreen(lastOpts,"blocked"); }
       else if(n==="NotFoundError"||n==="DevicesNotFoundError") permScreen(lastOpts,"nomic");
       else permScreen(lastOpts,"failed");
       if(window.LGOps&&LGOps.logError) try{LGOps.logError("mic",e)}catch(_){}
     }
   }
-  function notNow(){ if(pref()!=="off") setPref("notnow"); closeSheet(false); }
+  function notNow(){ act++; if(pref()!=="off") setPref("notnow"); closeSheet(false); }
 
   function privacyScreen(){
     const st=state();
@@ -239,12 +247,15 @@
   }
   async function toggle(){
     const st=state();
+    const my=++act;
     if(st==="ready"||pref()==="yes"&&st!=="blocked"){ setPref("off"); stopAll("off"); privacyScreen(); return; }
-    try{ audioCtx(); await getStream(); setPref("yes"); if(!inputs.size) stopStream(); }
-    catch(e){ const n=e&&e.name; if(n==="AbortError") setPref("yes"); else { if(n==="NotAllowedError"||n==="SecurityError"){ browserPerm="denied"; } setPref("notnow"); } }
+    const sw=document.querySelector("#micBody .micsw"); if(sw) sw.disabled=true;
+    try{ audioCtx(); await getStream(); if(stale(my)) return; setPref("yes"); if(!inputs.size) stopStream(); }
+    catch(e){ if(stale(my)) return; const n=e&&e.name; if(n==="AbortError") setPref("yes"); else { if(n==="NotAllowedError"||n==="SecurityError"){ browserPerm="denied"; } setPref("notnow"); } }
     privacyScreen();
   }
   function closePrivacy(){
+    act++;
     if(privacyReturn&&sheetResolve){
       const o=privacyReturn; privacyReturn=null;
       if(state()==="ready") closeSheet(true); else permScreen(o);
