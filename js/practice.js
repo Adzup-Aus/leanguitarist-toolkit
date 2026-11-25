@@ -20,5 +20,5 @@ function renderPractice(){
     return h;
   }).join("");
 }
-function toggleDay(d){practiceDone[d]=!practiceDone[d];if(practiceDone[d]&&typeof notePractised==="function")notePractised();LS.set("ccf_practice",practiceDone);renderPractice();}
-function resetPractice(){practiceDone={};LS.set("ccf_practice",practiceDone);renderPractice();toast("Tracker reset");}
+function toggleDay(d){practiceDone[d]=!practiceDone[d];if(practiceDone[d]&&typeof notePractised==="function")notePractised();LS.set("ccf_practice",practiceDone);renderPractice();if(typeof plPlanTick==="function")plPlanTick(d,!!practiceDone[d]);}
+function resetPractice(){practiceDone={};LS.set("ccf_practice",practiceDone);renderPractice();toast("Tracker reset");if(typeof renderHome==="function")renderHome();}

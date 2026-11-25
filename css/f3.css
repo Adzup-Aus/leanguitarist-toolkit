@@ -1,0 +1,40 @@
+/* F3: Home screen, Tools screen and the progress card on the Progress tab. */
+.hm-today{background:var(--ink);color:#fff;border-color:var(--ink)}
+.hm-today .k{color:#ff8a80;font-weight:700;font-size:11px;letter-spacing:.08em;text-transform:uppercase}
+.hm-today p{margin:6px 0 12px;font-size:14px;line-height:1.45;opacity:.9}
+.hm-timer{display:flex;align-items:center;gap:12px}
+.hm-clock{font-family:var(--serif);font-size:40px;line-height:1;font-variant-numeric:tabular-nums;min-width:96px}
+.hm-timer .btn{flex:1;justify-content:center}
+.hm-today .hm-tick{width:100%;justify-content:center;margin-top:10px;background:transparent;color:#fff;border-color:rgba(255,255,255,.35)}
+.hm-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-bottom:12px}
+.hm-stat{background:#fff;border:1px solid var(--line);border-radius:12px;padding:12px 6px;text-align:center;color:var(--ink);display:grid;gap:3px;align-content:start}
+.hm-stat b{font-family:var(--serif);font-weight:400;font-size:30px;line-height:1}
+.hm-stat span{font-size:11.5px;font-weight:600;line-height:1.25}
+.hm-stat small{font-size:10.5px;color:var(--muted);line-height:1.25}
+.hm-week b,.hm-cal > b{font-size:14px;display:block;margin-bottom:6px}
+.hm-note{font-size:12px;color:var(--muted);margin:6px 0 0;line-height:1.45}
+.hm-tools{display:grid;gap:8px}
+.hm-tool{display:flex;gap:12px;align-items:center;text-align:left;background:#fff;border:1px solid var(--line);border-radius:12px;padding:13px 14px;color:var(--ink)}
+.hm-tool svg{width:26px;height:26px;color:var(--red);flex:0 0 auto}
+.hm-tool b{display:block;font-size:15px}
+.hm-tool small{display:block;font-size:12.5px;color:var(--muted);margin-top:2px;line-height:1.35}
+.hm-score{text-align:center}
+.hm-score .k{color:var(--red);font-weight:700;font-size:11px;letter-spacing:.08em;text-transform:uppercase}
+.hm-big{font-family:var(--serif);font-size:52px;line-height:1.05}
+.hm-big small{font-size:18px;color:var(--muted)}
+.hm-parts{display:grid;gap:4px;margin-top:10px;font-size:12.5px;color:var(--muted);text-align:left}
+.hm-parts b{color:var(--ink)}
+.hm-calhead,.hm-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px}
+.hm-calhead span{font-size:10.5px;color:var(--muted);text-align:center}
+.hm-grid{margin-top:4px}
+.hm-grid i,.hm-legend i{border-radius:5px;background:#ebe6df;display:block}
+.hm-grid i{height:24px}
+.hm-grid i.l1,.hm-legend i.l1{background:#b9dfbc}
+.hm-grid i.l2,.hm-legend i.l2{background:#6cc173}
+.hm-grid i.l3{background:#048c0d}
+.hm-grid i.rest,.hm-legend i.rest{background:#fff;border:1px dashed #b9b0a5}
+.hm-grid i.fut{background:transparent;border:1px solid #efeae3}
+.hm-grid i.today{outline:2px solid var(--red);outline-offset:1px}
+.hm-legend{display:flex;flex-wrap:wrap;gap:12px;margin-top:10px;font-size:11.5px;color:var(--muted)}
+.hm-legend span{display:flex;align-items:center;gap:5px}
+.hm-legend i{width:12px;height:12px}

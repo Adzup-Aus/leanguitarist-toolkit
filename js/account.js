@@ -65,7 +65,7 @@ function countProgress(p){
   const on=o=>Object.values(o||{}).filter(Boolean).length;
   return {days:on(p.practice), skills:on(p.campfire), setlist:(p.setlist||[]).length, mysongs:(p.mysongs||[]).length};
 }
-function reRenderAll(){ renderSongs(); renderFilterChips(); renderPractice(); renderCampfire(); renderSongbook(); }
+function reRenderAll(){ renderSongs(); renderFilterChips(); renderPractice(); renderCampfire(); renderSongbook(); if(typeof renderHome==="function") renderHome(); }
 /* Called by LS.set (core.js) after every local save. */
 function onLocalWrite(k){ if(SYNC_ON && sbUser && accessOk && !applying) scheduleSync(); }
 function scheduleSync(){ if(syncTimer)clearTimeout(syncTimer); syncTimer=setTimeout(()=>{ syncTimer=null; syncNow(); },1200); }
@@ -143,6 +143,7 @@ function startSession(user){
     if(!ok){ accessOk=false; return {status:"error",email}; }
     renderAcctBtn();
     if(typeof rmFlushPractice==="function") rmFlushPractice(); /* F2: a practice time saved while offline */
+    if(typeof plSync==="function") plSync(); /* F3: the practice log */
     return {status:"ok",email,before};
   })();
   sessionRun=run;
@@ -218,6 +219,7 @@ function renderAcctBtn(){
   const inn=!!(sbUser&&accessOk);
   b.classList.toggle("in",inn);
   b.setAttribute("aria-label",inn?"Your account":"Sign in to save your progress");
+  if(typeof renderHome==="function") renderHome(); /* F3: signed in or out changes what Home shows */
 }
 function openAcct(){ showSignin(sbUser&&accessOk?"account":"signin"); }
 function closeSignin(){ const g=document.getElementById("loginGate"); if(g) g.style.display="none"; }
