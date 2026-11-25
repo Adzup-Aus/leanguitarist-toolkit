@@ -1,0 +1,44 @@
+/* F5: metronome and chord library. Uses the colours in css/app.css. */
+
+/* chord diagrams and the library */
+.f5-diabtn{border:0;background:none;padding:0;display:block;margin:0 auto;border-radius:10px}
+.f5-diabtn:focus-visible,.f5-libtile:focus-visible{outline:3px solid var(--blue);outline-offset:2px}
+.f5-legendcard{background:var(--soft);border:1px solid var(--line);border-radius:12px;padding:11px 13px;font-size:13px;line-height:1.5;color:#33302c;margin:0 0 6px}
+.f5-legendcard b{color:var(--red)}
+.f5-libhead{margin-top:18px}
+.f5-libgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px}
+@media(min-width:600px){.f5-libgrid{grid-template-columns:repeat(4,1fr)}}
+.f5-libtile{background:#fff;border:1px solid var(--line);border-radius:12px;padding:6px 4px 9px;display:grid;justify-items:center;gap:0;color:var(--ink)}
+.f5-libtile svg{width:100%;max-width:104px;height:auto}
+.f5-libtile b{font-size:15px}
+.f5-chordpop .card{max-width:300px}
+.f5-fingers{text-align:left;font-size:13px;line-height:1.55;color:#33302c;margin:4px 0 0}
+.f5-fingers b{display:inline-grid;place-items:center;width:18px;height:18px;border-radius:50%;background:var(--red);color:#fff;font-size:11px;margin-right:4px;vertical-align:1px}
+.f5-legend{font-size:11.5px;color:var(--muted);margin-top:8px}
+.f5-shapenote{text-align:left;margin-top:8px}
+.sbpop .f5-fingers{margin-top:6px}
+
+/* metronome */
+.f5-openrow{margin-top:10px}
+.f5-metro .sheet{max-width:520px}
+.f5-head{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:6px}
+.f5-head h3{font-size:26px}
+.f5-head .k{color:var(--red);font-weight:700;font-size:12px;letter-spacing:.08em;text-transform:uppercase}
+.f5-bpm{display:flex;align-items:center;justify-content:center;gap:22px;text-align:center;margin:4px 0 6px}
+.f5-step{width:54px;height:54px;border-radius:50%;border:1px solid var(--line);background:#fff;font-size:26px;font-weight:700;color:var(--ink);touch-action:manipulation;user-select:none;-webkit-user-select:none}
+.f5-big{font-family:var(--serif);font-size:64px;line-height:1;font-variant-numeric:tabular-nums;min-width:2.2em}
+.f5-unit{font-size:12.5px;color:var(--muted)}
+.f5-slider{width:100%;accent-color:var(--red);margin:6px 0 12px}
+.f5-beats{display:flex;gap:10px;justify-content:center;margin:2px 0 14px}
+.f5-beats i{width:20px;height:20px;border-radius:50%;background:#ebe6df}
+.f5-beats i.on{background:var(--ink)}
+.f5-beats i.on.first{background:var(--red)}
+.f5-row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.f5-row .btn{justify-content:center;padding:14px;font-size:15px}
+.f5-tap{touch-action:manipulation;user-select:none;-webkit-user-select:none}
+.f5-tapnote{font-size:12.5px;color:var(--muted);text-align:center;margin:8px 0 4px;min-height:1.4em}
+.f5-label{font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin-top:12px}
+.f5-chips{padding-top:6px}
+.f5-toggle{display:flex;align-items:center;gap:8px;font-size:14px;margin-top:12px}
+.f5-toggle input{width:18px;height:18px;accent-color:var(--red)}
+@media(prefers-reduced-motion:reduce){.f5-beats i{transition:none}}

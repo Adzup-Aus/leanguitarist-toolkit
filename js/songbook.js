@@ -88,9 +88,8 @@ function showChordPop(name){
   sbPopChord=name;
   let pop=document.getElementById("sbPop");
   if(!pop){ pop=document.createElement("div"); pop.id="sbPop"; pop.className="sbpop"; pop.addEventListener("click",e=>{ if(e.target===pop) closeChordPop(); }); document.body.appendChild(pop); }
-  const shape=sbShape(name);
-  const dia = shape ? chordSVG(shape) : '<div class="sbnote">Moveable/barre shape. Use the pattern shown for its open cousin, moved up the neck.</div>';
-  pop.innerHTML='<div class="card"><h3>'+esc(name)+'</h3>'+dia+'<div style="margin-top:6px"><button class="btn" onclick="playChordName(sbPopChord)">Hear it</button> <button class="btn ghost" onclick="closeChordPop()">Close</button></div></div>';
+  const dia = chordPopBody(name);
+  pop.innerHTML='<div class="card"><h3>'+esc(name)+'</h3>'+dia+'<div style="margin-top:6px"><button class="btn" onclick="hearChord(sbPopChord)">Hear it</button> <button class="btn ghost" onclick="closeChordPop()">Close</button></div></div>';
   pop.classList.add("show");
 }
 function closeChordPop(){ const pop=document.getElementById("sbPop"); if(pop) pop.classList.remove("show"); }
