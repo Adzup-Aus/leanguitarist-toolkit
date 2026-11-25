@@ -10,9 +10,12 @@
                                  Resolves true at once when it already may. "Not now" -> false.
      LGMic.open(opts)         -> Promise<input>. Needs state "ready" (call ask first).
                                  opts.fftSize (default 4096), opts.onEnd(reason) when the input
-                                 stops by itself ("hidden", "off", "ended").
+                                 stops by itself ("hidden", "off", "ended"). Rejects with
+                                 name "AbortError" if the player left the app meanwhile.
                                  input = { ctx, analyser, sampleRate, read(Float32Array), close() }
      LGMic.openPrivacy()      -> shows the microphone and privacy settings.
+     LGMic.cancel()           -> hides an open microphone screen (a tool closing); a pending
+                                 ask() resolves false and nothing is remembered.
      LGMic.onChange(fn)       -> fn(state) whenever the state changes.
 
    The only thing kept is the player's choice, on this device (localStorage
@@ -64,23 +67,40 @@
   /* Raw sound for measuring: the phone's voice clean-up would bend the notes. */
   const CONSTRAINTS={audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false},video:false};
 
-  async function getStream(){
-    if(stream&&stream.getAudioTracks().some(t=>t.readyState==="live")) return stream;
-    let s;
-    try{ s=await navigator.mediaDevices.getUserMedia(CONSTRAINTS); }
-    catch(e){
-      /* Some browsers refuse the clean-up switches; retry with defaults. */
-      if(e&&(e.name==="OverconstrainedError"||e.name==="TypeError")) s=await navigator.mediaDevices.getUserMedia({audio:true,video:false});
-      else throw e;
-    }
-    stream=s; browserPerm="granted";
-    s.getAudioTracks().forEach(t=>{ t.onended=()=>{ if(stream===s) stopAll("ended"); }; });
-    return s;
+  /* One request at a time: a second caller waits for the same one. A request
+     that finishes after the player left the app, or after the microphone was
+     switched off, is stopped at once and reported as cancelled ("AbortError"). */
+  let pending=null, gen=0;
+  function getStream(){
+    if(stream&&stream.getAudioTracks().some(t=>t.readyState==="live")) return Promise.resolve(stream);
+    if(pending) return pending;
+    const mine=gen;
+    pending=(async()=>{
+      let s;
+      try{
+        try{ s=await navigator.mediaDevices.getUserMedia(CONSTRAINTS); }
+        catch(e){
+          /* Some browsers refuse the clean-up switches; retry with defaults. */
+          if(e&&(e.name==="OverconstrainedError"||e.name==="TypeError")) s=await navigator.mediaDevices.getUserMedia({audio:true,video:false});
+          else throw e;
+        }
+      } finally { pending=null; }
+      browserPerm="granted";
+      if(mine!==gen||document.hidden){
+        s.getTracks().forEach(t=>{try{t.stop()}catch(e){}});
+        const e=new Error("microphone request cancelled"); e.name="AbortError"; throw e;
+      }
+      stream=s;
+      s.getAudioTracks().forEach(t=>{ t.onended=()=>{ if(stream===s) stopAll("ended"); }; });
+      return s;
+    })();
+    return pending;
   }
   function stopStream(){
     if(stream){ stream.getTracks().forEach(t=>{try{t.stop()}catch(e){}}); stream=null; }
   }
   function stopAll(reason){
+    gen++;                                // cancels a request still waiting
     const list=[...inputs]; inputs.clear();
     list.forEach(i=>{ i._dead=true; try{i._src.disconnect()}catch(e){} if(i._onEnd){try{i._onEnd(reason)}catch(e){}} });
     stopStream();
@@ -93,6 +113,7 @@
     let s;
     try{ s=await getStream(); }
     catch(e){ const n=e&&e.name; if(n==="NotAllowedError"||n==="SecurityError"){ browserPerm="denied"; emit(); } throw e; }
+    if(state()!=="ready"){ if(!inputs.size) stopStream(); throw new Error("microphone-not-ready"); }
     const src=c.createMediaStreamSource(s);
     const an=c.createAnalyser(); an.fftSize=opts.fftSize||4096; an.smoothingTimeConstant=0;
     src.connect(an);                      // never connected to the speakers
@@ -105,7 +126,7 @@
 
   /* Leaving the app (another tab, the home screen) switches the microphone off,
      so the phone's "microphone in use" light never stays on behind the player. */
-  document.addEventListener("visibilitychange",()=>{ if(document.hidden&&inputs.size) stopAll("hidden"); });
+  document.addEventListener("visibilitychange",()=>{ if(document.hidden) stopAll("hidden"); });
 
   /* ---------- the screens ---------- */
   function sheet(){
@@ -113,8 +134,9 @@
     if(el) return el;
     el=document.createElement("div"); el.id="micSheet"; el.className="micsheet";
     el.innerHTML='<div class="micbox" role="dialog" aria-modal="true" aria-labelledby="micTitle"><div id="micBody"></div></div>';
-    el.addEventListener("click",e=>{ if(e.target===el) closeSheet(false); });
-    el.addEventListener("keydown",e=>{ if(e.key==="Escape"){ e.stopPropagation(); closeSheet(false); } });
+    /* A tap on the dimmed background or Escape counts as "Not now" (or "Done"). */
+    el.addEventListener("click",e=>{ if(e.target===el) dismiss(); });
+    el.addEventListener("keydown",e=>{ if(e.key==="Escape"){ e.stopPropagation(); dismiss(); } });
     document.body.appendChild(el);
     return el;
   }
@@ -122,6 +144,10 @@
     const el=sheet(); document.getElementById("micBody").innerHTML=html; el.classList.add("show");
     const t=document.getElementById("micTitle"); if(t){ t.setAttribute("tabindex","-1"); t.focus({preventScroll:true}); }
   }
+  let sheetMode="";                       // "ask" or "privacy"
+  function dismiss(){ if(sheetMode==="privacy") closePrivacy(); else notNow(); }
+  /* For a tool that closes while its sheet is open: hide it, remember nothing. */
+  function cancel(){ privacyReturn=null; closeSheet(false); }
   function closeSheet(result){
     const el=document.getElementById("micSheet"); if(el) el.classList.remove("show");
     const r=sheetResolve; sheetResolve=null; if(r) r(result);
@@ -149,7 +175,7 @@
       '<p class="micsmall">Your browser will ask next. Tap <b>Allow</b> there too.</p>';
     h+='<button type="button" class="btn ghost micbtn" onclick="LGMic._notNow()">Not now</button>'+
       '<button type="button" class="miclink" onclick="LGMic.openPrivacy()">Privacy settings</button>';
-    showSheet(h);
+    sheetMode="ask"; showSheet(h);
   }
   let lastOpts={};
   function ask(opts){
@@ -157,6 +183,7 @@
     const st=state();
     if(st==="ready") return Promise.resolve(true);
     if(st==="unsupported"){
+      sheetMode="ask";
       showSheet('<div class="micicon">'+MIC_SVG+'</div><h2 class="mich" id="micTitle">Listening isn\'t available here</h2>'+
         '<p class="micp">This browser can\'t share the microphone with the app. Try Safari on an iPhone, or Chrome. Tap mode still works: tap a string to hear its note.</p>'+
         '<button type="button" class="btn micbtn" onclick="LGMic._notNow()">OK</button>');
@@ -176,6 +203,7 @@
       closeSheet(true);
     }catch(e){
       const n=e&&e.name;
+      if(n==="AbortError"){ setPref("yes"); closeSheet(true); return; }
       if(n==="NotAllowedError"||n==="SecurityError"||n==="PermissionDeniedError"){ browserPerm="denied"; emit(); permScreen(lastOpts,"blocked"); }
       else if(n==="NotFoundError"||n==="DevicesNotFoundError") permScreen(lastOpts,"nomic");
       else permScreen(lastOpts,"failed");
@@ -201,7 +229,7 @@
       '<h3 class="mich3">Camera</h3><p class="micp">Not used. If camera features come later, each will be its own choice, off until you turn it on.</p>'+
       '<p class="micsmall">Turning this off stops the app listening. To remove the browser\'s own permission too, use your browser\'s settings for this website. See our <a href="'+POLICY+'" target="_blank" rel="noopener">Privacy policy</a>.</p>'+
       '<button type="button" class="btn micbtn" onclick="LGMic._closePrivacy()">Done</button>';
-    showSheet(h);
+    sheetMode="privacy"; showSheet(h);
   }
   let privacyReturn=null;
   function openPrivacy(){
@@ -213,7 +241,7 @@
     const st=state();
     if(st==="ready"||pref()==="yes"&&st!=="blocked"){ setPref("off"); stopAll("off"); privacyScreen(); return; }
     try{ audioCtx(); await getStream(); setPref("yes"); if(!inputs.size) stopStream(); }
-    catch(e){ const n=e&&e.name; if(n==="NotAllowedError"||n==="SecurityError"){ browserPerm="denied"; } setPref("notnow"); }
+    catch(e){ const n=e&&e.name; if(n==="AbortError") setPref("yes"); else { if(n==="NotAllowedError"||n==="SecurityError"){ browserPerm="denied"; } setPref("notnow"); } }
     privacyScreen();
   }
   function closePrivacy(){
@@ -225,6 +253,6 @@
     closeSheet(state()==="ready");
   }
 
-  window.LGMic={state,ask,open,openPrivacy,onChange,
+  window.LGMic={state,ask,open,openPrivacy,onChange,cancel,
     _allow:allow,_notNow:notNow,_toggle:toggle,_closePrivacy:closePrivacy};
 })();

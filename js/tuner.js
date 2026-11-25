@@ -78,7 +78,7 @@
   /* ---------- the screen ---------- */
   const INST_KEY="lg_tuner_inst";
   const st={open:false,inst:"guitar",auto:true,target:0,done:{},input:null,listening:false,paused:false,
-    raf:0,lastRun:0,peak:0,peakAt:0,prevLvl:0,hist:[],lastHeard:0,inTuneSince:0,mutedUntil:0,pushed:false,opener:null,buf:null,shown:null};
+    raf:0,lastRun:0,starting:false,goodAt:0,peak:0,peakAt:0,prevLvl:0,hist:[],lastHeard:0,inTuneSince:0,mutedUntil:0,pushed:false,opener:null,buf:null,shown:null};
   try{ const v=localStorage.getItem(INST_KEY); if(v&&INSTRUMENTS[v]) st.inst=v; }catch(e){}
   const $=id=>document.getElementById(id);
   const strings=()=>INSTRUMENTS[st.inst].strings;
@@ -146,7 +146,7 @@
         ms==="blocked"?"Your browser is blocking the microphone.":
         ms==="unsupported"?"This browser can't share the microphone.":"");
       h='<p class="tntap">'+(why?'<b>'+why+'</b> ':'')+'Tap a string to hear its note, then turn the peg until your string sounds the same.</p>'+
-        (ms==="unsupported"?'':'<button type="button" class="btn tnmbtn" onclick="LGTuner.listen()">'+MIC_SVG+(st.paused?'Listen again':'Use the microphone')+'</button>');
+        (ms==="unsupported"?'':'<button type="button" class="btn tnmbtn" onclick="LGTuner.listen()"'+(st.starting?' disabled':'')+'>'+MIC_SVG+(st.starting?'Starting...':st.paused?'Listen again':'Use the microphone')+'</button>');
     }
     $("tnMode").innerHTML=h;
   }
@@ -188,6 +188,11 @@
 
   /* ---------- listening ---------- */
   async function listen(){
+    if(st.starting||st.listening) return;
+    st.starting=true;
+    try{ await startListening(); } finally { st.starting=false; if(st.open&&!st.listening) renderMode(); }
+  }
+  async function startListening(){
     st.paused=false;
     const ok=await LGMic.ask({title:"Let the tuner hear your guitar",
       text:"Play a string and the tuner shows whether it's too low, too high or in tune."});
@@ -201,8 +206,9 @@
         renderAll(reason==="ended"?"The microphone stopped.":"");
       }});
     }catch(e){
+      if(e&&e.name==="AbortError"){ st.paused=true; renderAll(); return; }
       if(window.LGOps&&LGOps.logError) try{LGOps.logError("tuner",e)}catch(_){}
-      renderAll(LGMic.state()==="blocked"?"":"The microphone didn't start.");
+      renderAll(LGMic.state()==="blocked"||LGMic.state()==="off"?"":"The microphone didn't start.");
       return;
     }
     if(!st.open){ st.input.close(); st.input=null; return; }
@@ -261,13 +267,14 @@
     else if(a<=20) txt=c<0?"A little low. Tighten slowly.":"A little high. Loosen slowly.";
     else txt=c<0?"Too low. Tighten the string (tune up).":"Too high. Loosen the string (tune down).";
     if(good){
-      if(!st.inTuneSince) st.inTuneSince=now;
+      /* half a second of unbroken in-tune readings (a gap over 250 ms starts again) */
+      if(!st.inTuneSince||now-st.goodAt>250) st.inTuneSince=now;
+      st.goodAt=now;
       if(now-st.inTuneSince>=HOLD_MS&&!st.done[st.inst+st.target]){
         st.done[st.inst+st.target]=true; renderStrings();
         const next=list.map((x,i)=>i).find(i=>!st.done[st.inst+i]);
         if(next===undefined) txt="All "+list.length+" strings in tune. Nice work!";
-        else txt=s.name.charAt(0).toUpperCase()+s.name.slice(1)+" string in tune. Next: the "+list[next].name+" string.";
-        if(!st.auto&&next!==undefined){ st.target=next; renderStrings(); showTarget(); }
+        else txt=s.name.charAt(0).toUpperCase()+s.name.slice(1)+" string in tune. Next: the "+list[next].name+" string"+(st.auto?".":" (tap it, or tap Auto).");
         st.shown=txt; st.shownUntil=now+1800;
       }
     } else st.inTuneSince=0;
@@ -293,6 +300,7 @@
   function openTuner(){
     if(typeof seqStop==="function") try{seqStop()}catch(e){}
     const el=build(); st.open=true; st.opener=document.activeElement;
+    st.done={}; st.hist=[]; st.paused=false; st.inTuneSince=0; st.shown=null;   // a fresh tuning each time
     el.classList.add("show"); document.documentElement.classList.add("tnlock");
     if(location.hash!=="#tuner"){ try{history.pushState({tuner:1},"","#tuner"); st.pushed=true;}catch(e){} }
     renderAll();
@@ -303,6 +311,7 @@
   function closeTuner(fromHistory){
     if(!st.open) return;
     st.open=false; stopListening();
+    if(LGMic.cancel) LGMic.cancel();      // a permission or privacy screen it opened goes too
     const el=$("tunerView"); if(el) el.classList.remove("show");
     document.documentElement.classList.remove("tnlock");
     if(!fromHistory&&location.hash==="#tuner"){
