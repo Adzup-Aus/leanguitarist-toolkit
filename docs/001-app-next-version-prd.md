@@ -141,31 +141,54 @@ Each session updates its own row when it ends.
   preview for the pull request; the session tests there, never on the live app.
 - **Small steps, saved as it goes.** It commits after each working step, so nothing depends
   on a long conversation.
-- **Tested, checked, reviewed, then merged.** It runs its "done means" test on the preview and
-  records the result in the tracker, then the outside check by two other models (playbook
-  section 7a), then Cliff's review on the preview. It merges only after all three.
-- **Every report ends with a preview link and Cliff's review** (Cliff, 20 November 2026). Each
-  stage session (F0, F1, ...) ends every report with the preview link for its change (the pull
-  request's deploy preview), the live link once merged, and a short list of steps to try. Cliff
-  reviews the user experience on the preview before the stage is merged and goes live, and his
-  feedback is acted on before the merge. The session stays open, without the (F) title mark,
-  until he has reviewed.
-- **Issues found at the end of a stage go to a connected session** (Cliff, 20 November 2026).
-  A new issue with the stage's feature, from its tests, the outside check's notes or Cliff's
-  review, is fixed in a session the stage session starts as its own linked session, which
-  reports back to the stage session. It is not fixed inside the stage session, and not parked
-  in the tracker's Notes for a later stage.
+- **Tested, checked, then merged; Cliff reviews on the live app** (Cliff, 25 November 2026:
+  "make this the standard process for all app builds moving forward so we make maximum
+  progress in the shortest time without requiring my constant input"). It runs its "done
+  means" test on the preview and records the result in the tracker, then the outside check by
+  two other models (playbook section 7a). It merges once both pass; the outside check stands in
+  for Cliff's review of the preview. Cliff reviews on the live app afterwards, and anything he
+  wants changed goes to a linked fix session. Cliff can still ask for a review before merging
+  on any feature; that feature then waits for him, and its session stays open, without the (F)
+  title mark, until he has reviewed.
+- **After 3 rounds of the outside check with open items,** the session merges only if its own
+  tests pass and no open item touches saved data, sign-in, privacy, security or cost limits,
+  and lists the open items in its tracker row. Otherwise it marks its row "Stopped:" with the
+  reason and stops.
+- **Every report ends with the live link and steps to try** (and the preview link while it is
+  not merged yet), and goes up to the session above, then to the main session.
+- **Issues go to a connected session** (Cliff, 20 November 2026). A new issue with the stage's
+  feature, from its tests, the outside check's notes or Cliff's review on the live app, is
+  fixed in a session the stage session starts as its own linked session, which reports back to
+  the stage session. It is not fixed inside the stage session, and not parked in the tracker's
+  Notes for a later stage.
 - **It stops when the feature is done.** Anything unrelated it finds goes into the tracker's
   Notes for a later session. If a session gets long before its feature is done, it writes where
   it got to in the tracker and hands over to a fresh session.
-- **In parallel, when the files don't overlap** (Cliff, 25 November 2026). The main session
-  starts every feature whose prerequisite features are already live (the waves in section 5).
-  Each session works in its own worktree, on its own branch and its own Netlify preview.
+- **In parallel, when the files don't overlap** (Cliff, 25 November 2026). Every feature whose
+  prerequisite features are already live (the waves in section 5) builds at once; the others
+  wait on their own (below). Each session works in its own worktree, on its own branch and its
+  own Netlify preview.
+- **The whole build is started up front** (Cliff, 25 November 2026). After Cliff approves the
+  plan, the main session starts every remaining feature's session in one go, while Cliff is
+  present, because sessions cannot be started from automatic turns later. The app runs at most
+  5 sessions at once and starts about 10 per message from Cliff; whatever does not fit goes on
+  cards for Cliff to click.
+- **Waiting sessions.** A feature whose prerequisite features are not live yet runs a
+  background wait (Bash `run_in_background`, never a foreground sleep). The wait reads the
+  build tracker (section 6) on `main` every 10 minutes and exits when every prerequisite's row
+  starts with "Done", or when any starts with "Stopped". Then the session builds. If a
+  prerequisite stopped, it marks its own row "Stopped: waiting on F<n>" and stops.
+- **Always held for Cliff's yes:** emails or messages to buyers, live payments or paid
+  features, new paid services or logins, spending beyond the outside checks and a feature's
+  stated cost cap, and keys or passwords.
+- **Keeping it running unattended.** The main session asks the app to keep the Mac awake and
+  schedules a report for when Cliff returns: what is live, with steps to try; the steps that
+  need a real guitar or a real device; what stopped and why; the spend; and what waits on him.
+  Cliff leaves the Mac plugged in with the lid open and the Claude app running.
 - **New files, not shared ones.** Each feature puts its code in `js/<feature>.js` and its
   styles in `css/<feature>.css`. It changes the shared files (`index.html`, `css/app.css`,
   `sw.js`, `js/main.js`, `js/data.js`) by as few lines as possible.
-- **The merge queue.** When a feature has passed its tests, the outside check and Cliff's
-  review, it brings its branch up to date with `main` and, if any shared file changed, runs its
+- **The merge queue.** When a feature has passed its tests and the outside check, it brings its branch up to date with `main` and, if any shared file changed, runs its
   "done means" test again on the new preview. Then it sets the `sw.js` cache version to one
   more than the one on `main` at that moment (never earlier, and never set on the branch
   beforehand), merges, and checks the live app. If two are ready together, the first to finish
