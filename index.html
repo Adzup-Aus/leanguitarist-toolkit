@@ -14,6 +14,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=Open+Sans:wght@400;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="css/app.css">
+<link rel="stylesheet" href="css/f3.css">
 <!-- Pinned: sb_publishable_ keys require supabase-js >= 2.111.0. Do not float this to @2. -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.112.4/dist/umd/supabase.js"></script>
 </head>
@@ -25,8 +26,12 @@
 </div></header>
 
 <main>
+  <!-- HOME and TOOLS (F3, js/home.js) -->
+  <section id="t-home" class="tab active"></section>
+  <section id="t-tools" class="tab"><div class="tabhead"><div class="k">Everything for practice</div><h2>Tools</h2></div><div id="toolList" class="hm-tools"></div></section>
+
   <!-- CHORDS -->
-  <section id="t-chords" class="tab active">
+  <section id="t-chords" class="tab">
     <div class="tabhead"><div class="k">The four chords</div><h2>Your Chords</h2>
       <p>These four shapes unlock every song in here. Tap any chord to hear it. Press only as hard as you need to, and aim for the fingertips.</p></div>
     <div id="chordGrid" class="chordgrid"></div>
@@ -153,6 +158,8 @@
 <script src="js/ready.js"></script>
 <script src="js/account.js"></script>
 <script src="js/reminders.js"></script>
+<script src="js/practice-log.js"></script>
+<script src="js/home.js"></script>
 <script src="js/main.js"></script>
 </body>
 </html>

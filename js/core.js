@@ -86,24 +86,32 @@ const PLAY_SVG=`<svg width="18" height="18" viewBox="0 0 24 24" fill="currentCol
 const STOP_SVG=`<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>`;
 
 /* ============ NAV ============ */
+/* nav:<n> = one of the 5 bottom buttons, in that order. parent:"tools" = opened from
+   the Tools screen, with desc as its line there. A new tool adds one entry like the
+   chords one (F3, see docs/001-app-next-version-prd.md, tracker row F3). */
 const TABS=[
- {id:"chords",label:"Chords",icon:`<path d="M6 3v13.5a3 3 0 1 0 2 2.8V8h9V5H8V3z"/>`},
- {id:"songs",label:"Songs",icon:`<path d="M4 6h13v2H4zm0 5h13v2H4zm0 5h9v2H4zM19 5v8.2a2.6 2.6 0 1 0 1.6 2.4V5z"/>`},
- {id:"songbook",label:"Songbook",icon:`<path d="M4 4h7a2 2 0 0 1 2 2v13a2 2 0 0 0-2-1.5H4zM20 4h-7a2 2 0 0 0-2 2v13a2 2 0 0 1 2-1.5h7z"/>`},
- {id:"strum",label:"Strum",icon:`<path d="M4 7h2v10H4zm4 2h2v6H8zm4-3h2v12h-2zm4 4h2v4h-2zm4-2h2v8h-2z"/>`},
- {id:"practice",label:"Practice",icon:`<path d="M19 3h-4.2A3 3 0 0 0 9.2 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2zm-7 0a1 1 0 1 1 0 2 1 1 0 0 1 0-2zm-1.3 14.7l-3-3 1.4-1.4 1.6 1.6 3.9-3.9 1.4 1.4z"/>`},
- {id:"fingers",label:"Fingers",icon:`<path d="M9 11V4.5a1.5 1.5 0 0 1 3 0V10h1V2.5a1.5 1.5 0 0 1 3 0V11l2 1v6a4 4 0 0 1-4 4h-3a5 5 0 0 1-4.5-2.8L4 14s1-1.4 2.6-.6L8 14V5.5a1.5 1.5 0 0 1 3 0"/>`},
- {id:"ready",label:"Ready",icon:`<path d="M12 2l2.2 5.5L20 8l-4 4 1 6-5-2.8L7 18l1-6-4-4 5.8-.5z"/>`}
+ {id:"home",label:"Home",nav:1,icon:`<path d="M12 3 2 11h3v9h5v-6h4v6h5v-9h3z"/>`},
+ {id:"tools",label:"Tools",nav:4,icon:`<path d="M22.7 19 13.6 9.9a6.3 6.3 0 0 0-1.5-6.7A6.5 6.5 0 0 0 5 1.8l4.3 4.3-3 3L1.8 4.9a6.4 6.4 0 0 0 1.4 7.2 6.3 6.3 0 0 0 6.7 1.5l9.1 9.1a1 1 0 0 0 1.4 0l2.3-2.3a1 1 0 0 0 0-1.4z"/>`},
+ {id:"chords",label:"Chords",parent:"tools",desc:"Your four chords: shapes and sound",icon:`<path d="M6 3v13.5a3 3 0 1 0 2 2.8V8h9V5H8V3z"/>`},
+ {id:"songs",label:"Songs",nav:3,icon:`<path d="M4 6h13v2H4zm0 5h13v2H4zm0 5h9v2H4zM19 5v8.2a2.6 2.6 0 1 0 1.6 2.4V5z"/>`},
+ {id:"songbook",label:"Songbook",parent:"tools",desc:"Whole songs with chords, transpose and scroll",icon:`<path d="M4 4h7a2 2 0 0 1 2 2v13a2 2 0 0 0-2-1.5H4zM20 4h-7a2 2 0 0 0-2 2v13a2 2 0 0 1 2-1.5h7z"/>`},
+ {id:"strum",label:"Strum",parent:"tools",desc:"Strumming patterns to hear and play along",icon:`<path d="M4 7h2v10H4zm4 2h2v6H8zm4-3h2v12h-2zm4 4h2v4h-2zm4-2h2v8h-2z"/>`},
+ {id:"practice",label:"Practice",nav:2,icon:`<path d="M19 3h-4.2A3 3 0 0 0 9.2 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2zm-7 0a1 1 0 1 1 0 2 1 1 0 0 1 0-2zm-1.3 14.7l-3-3 1.4-1.4 1.6 1.6 3.9-3.9 1.4 1.4z"/>`},
+ {id:"fingers",label:"Fingers",parent:"tools",desc:"Practice timer and the sore finger survival kit",icon:`<path d="M9 11V4.5a1.5 1.5 0 0 1 3 0V10h1V2.5a1.5 1.5 0 0 1 3 0V11l2 1v6a4 4 0 0 1-4 4h-3a5 5 0 0 1-4.5-2.8L4 14s1-1.4 2.6-.6L8 14V5.5a1.5 1.5 0 0 1 3 0"/>`},
+ {id:"ready",label:"Progress",nav:5,icon:`<path d="M12 2l2.2 5.5L20 8l-4 4 1 6-5-2.8L7 18l1-6-4-4 5.8-.5z"/>`}
 ];
 function renderNav(){
-  document.getElementById("nav").innerHTML=TABS.map(t=>
-    `<button id="nav-${t.id}" onclick="switchTab('${t.id}')"><svg viewBox="0 0 24 24" fill="currentColor">${t.icon}</svg><span>${t.label}</span></button>`).join("");
+  const cur=(document.querySelector(".tab.active")||{id:"t-home"}).id.slice(2), top=(TABS.find(t=>t.id===cur)||{}).parent||cur;
+  document.getElementById("nav").innerHTML=TABS.filter(t=>t.nav).sort((a,b)=>a.nav-b.nav).map(t=>
+    `<button id="nav-${t.id}" class="${t.id===top?"on":""}" onclick="switchTab('${t.id}')"><svg viewBox="0 0 24 24" fill="currentColor">${t.icon}</svg><span>${t.label}</span></button>`).join("");
 }
 function switchTab(id){
   seqStop(); if(sbState&&sbState.timer){clearInterval(sbState.timer);sbState.scroll=false;} document.querySelectorAll(".play.playing,[id^='patbtn-'].playing").forEach(b=>{b.classList.remove("playing");b.innerHTML=PLAY_SVG;});
   document.querySelectorAll(".tab").forEach(s=>s.classList.remove("active"));
   document.getElementById("t-"+id).classList.add("active");
-  TABS.forEach(t=>document.getElementById("nav-"+t.id).classList.toggle("on",t.id===id));
+  const top=(TABS.find(t=>t.id===id)||{}).parent||id;
+  document.querySelectorAll("#nav button").forEach(b=>b.classList.toggle("on",b.id==="nav-"+top));
+  if(typeof onTabShown==="function") onTabShown(id);
   window.scrollTo({top:0,behavior:"instant"});
 }
 
