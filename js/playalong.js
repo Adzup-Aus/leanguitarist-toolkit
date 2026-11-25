@@ -13,6 +13,8 @@ const PAFallbackClock=(function(){
   const AHEAD=0.12, EVERY=25;
   function stepDur(){ return 60/bpm/sub; }
   function pump(){
+    /* fallen behind (a stalled tab): skip the missed steps on the grid instead of playing them late */
+    if(next < ctx.currentTime-0.05){ const sd=stepDur(), k=Math.ceil((ctx.currentTime+0.03-next)/sd); next+=k*sd; step+=k; }
     while(next < ctx.currentTime+AHEAD){
       const t=next, s=step;
       subs.slice().forEach(fn=>{ try{ fn(t,s); }catch(e){ if(window.LGOps&&LGOps.logError) LGOps.logError("playalong tick",e); } });
@@ -90,6 +92,17 @@ function paBass(t,chord,dur,fifth,v){
   const g=ctx.createGain(); g.gain.setValueAtTime(0.0001,t); g.gain.exponentialRampToValueAtTime(0.32*v,t+0.01); g.gain.setValueAtTime(0.3*v,t+dur*0.7); g.gain.exponentialRampToValueAtTime(0.001,t+dur);
   o.connect(lp); o2.connect(lp); lp.connect(g).connect(paBus.bass);
   o.start(t); o2.start(t); o.stop(t+dur+0.02); o2.stop(t+dur+0.02);
+  paBassNotes.push({g:g,start:t,end:t+dur,peak:0.32*v});
+}
+/* bass notes still sounding or queued, so a speed change can end them before the new downbeat */
+let paBassNotes=[];
+function paCutBass(){
+  if(!ctx) return; const now=ctx.currentTime;
+  paBassNotes=paBassNotes.filter(n=>n.end>now);
+  paBassNotes.forEach(n=>{ if(n.cut) return; n.cut=true;
+    const at=Math.max(now+0.005,n.start+0.012), p=n.g.gain;
+    if(p.cancelAndHoldAtTime) p.cancelAndHoldAtTime(at); else { p.cancelScheduledValues(at); p.setValueAtTime(n.peak,at); }
+    p.linearRampToValueAtTime(0.0001,at+0.03); n.end=at+0.03; });
 }
 
 /* ---------- grooves, one per strum style: 8 eighth-note steps per bar ----------
@@ -186,7 +199,7 @@ function paStop(){
 }
 function paToggle(){ pa.playing?paStop():paPlay(); }
 function paButtons(){ const b=document.getElementById("paGo"); if(b){ b.innerHTML=pa.playing?STOP_SVG+" Stop":PLAY_SVG+" Play along"; b.classList.toggle("playing",pa.playing); } }
-function paSpeed(v){ pa.bpm=+v; const o=document.getElementById("paBpm"); if(o) o.textContent=v; if(pa.playing) paClock().setBpm(pa.bpm); }
+function paSpeed(v){ pa.bpm=+v; const o=document.getElementById("paBpm"); if(o) o.textContent=v; if(pa.playing){ paCutBass(); paClock().setBpm(pa.bpm); } }
 function paPart(k,btn){ pa.parts[k]=!pa.parts[k]; btn.classList.toggle("on",pa.parts[k]); paSetParts(); }
 function paCountToggle(btn){ pa.countIn=!pa.countIn; btn.classList.toggle("on",pa.countIn); }
 
