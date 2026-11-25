@@ -101,7 +101,7 @@ Each session updates its own row when it ends.
 | F4 | Not started | | | | |
 | F5 | Not started | | | | |
 | F6 | Not started | | | | |
-| F7 | Not started | | | | |
+| F7 | Built, tested on the preview; outside check and Cliff's review next | F7 build session, 25 Nov 2026 | [#11](https://github.com/Adzup-Aus/leanguitarist-toolkit/pull/11) | Yes, on commit c5ff229: deploy-preview-11--leanguitar.netlify.app, signed out. "Zombie" (Em - C - G - D) at 100 bpm: count-in, then every eighth note exactly 0.300 s apart on the audio clock, none late, chords Em, C, G, D on beat 1 of bars 1 to 4. Speed slider moved while playing retimes at once (0.375 s at 80, 0.2143 s at 140). All 105 songs run through a full cycle with their chords in order and no errors. 375 px fits. Evidence: shared notes folder, `F7-evidence.md` | Files: `js/playalong.js`, `css/f7.css`; one line in `js/songs.js` (the "Play along" link), two lines each in `index.html` and `sw.js` ASSETS. Sounds are made in the browser (drums, bass on the chord root and fifth, a quiet guide strum in the song's strum pattern), one chord per bar of 4 beats; uses only `progression` and `strum` from `js/data.js`. Timing: a look-ahead scheduler behind a start/stop/setBpm/onTick interface (`PAFallbackClock`); `paClock()` uses F5's `window.LGClock` when it offers that interface |
 | F8 | Not started | | | | |
 | F9 | Not started | | | | |
 | F10 | Not started | | | | |
