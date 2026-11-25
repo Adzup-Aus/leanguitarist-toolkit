@@ -27,7 +27,8 @@
 .hm-calhead,.hm-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px}
 .hm-calhead span{font-size:10.5px;color:var(--muted);text-align:center}
 .hm-grid{margin-top:4px}
-.hm-grid i,.hm-legend i{aspect-ratio:1;border-radius:5px;background:#ebe6df;display:block}
+.hm-grid i,.hm-legend i{border-radius:5px;background:#ebe6df;display:block}
+.hm-grid i{height:24px}
 .hm-grid i.l1,.hm-legend i.l1{background:#b9dfbc}
 .hm-grid i.l2,.hm-legend i.l2{background:#6cc173}
 .hm-grid i.l3{background:#048c0d}
