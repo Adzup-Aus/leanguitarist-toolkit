@@ -15,6 +15,7 @@
 <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=Open+Sans:wght@400;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="css/app.css">
 <link rel="stylesheet" href="css/f7.css">
+<link rel="stylesheet" href="css/f4.css">
 <!-- Pinned: sb_publishable_ keys require supabase-js >= 2.111.0. Do not float this to @2. -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.112.4/dist/umd/supabase.js"></script>
 </head>
@@ -30,6 +31,7 @@
   <section id="t-chords" class="tab active">
     <div class="tabhead"><div class="k">The four chords</div><h2>Your Chords</h2>
       <p>These four shapes unlock every song in here. Tap any chord to hear it. Press only as hard as you need to, and aim for the fingertips.</p></div>
+    <button class="rmcard tncard" type="button" onclick="openTuner()"><svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm1 15.9V16h-2v1.9A6 6 0 0 1 6.1 13H8v-2H6.1A6 6 0 0 1 11 6.1V8h2V6.1a6 6 0 0 1 4.9 4.9H16v2h1.9a6 6 0 0 1-4.9 4.9zM12 10a2 2 0 1 0 2 2 2 2 0 0 0-2-2z"/></svg><span><b>Tuner</b><small>Guitar and bass. It listens on this device only.</small></span></button>
     <div id="chordGrid" class="chordgrid"></div>
     <div class="card" style="margin-top:4px">
       <h3 style="font-size:18px;margin-bottom:6px">Reading a chord box</h3>
@@ -155,6 +157,8 @@
 <script src="js/account.js"></script>
 <script src="js/reminders.js"></script>
 <script src="js/playalong.js"></script>
+<script src="js/mic.js"></script>
+<script src="js/tuner.js"></script>
 <script src="js/main.js"></script>
 </body>
 </html>
