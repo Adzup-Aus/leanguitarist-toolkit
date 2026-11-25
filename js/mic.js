@@ -30,8 +30,11 @@
   let sheetResolve=null;
 
   const supported=()=>!!(window.isSecureContext!==false&&navigator.mediaDevices&&navigator.mediaDevices.getUserMedia);
-  const pref=()=>{try{return localStorage.getItem(KEY)||""}catch(e){return ""}};
-  const setPref=v=>{try{localStorage.setItem(KEY,v)}catch(e){} emit();};
+  /* Kept in memory too, so the choice holds for this visit when the browser
+     blocks storage (some private modes). */
+  let memPref=null;
+  const pref=()=>{ if(memPref!==null) return memPref; try{return localStorage.getItem(KEY)||""}catch(e){return ""} };
+  const setPref=v=>{ memPref=v; try{localStorage.setItem(KEY,v)}catch(e){} emit(); };
 
   function state(){
     if(!supported()) return "unsupported";
@@ -88,7 +91,9 @@
       browserPerm="granted";
       if(mine!==gen||document.hidden){
         s.getTracks().forEach(t=>{try{t.stop()}catch(e){}});
-        const e=new Error("microphone request cancelled"); e.name="AbortError"; throw e;
+        /* The browser said yes, but the app was left meanwhile. (A browser's own
+           AbortError, such as a dismissed prompt, has no lgGranted mark.) */
+        const e=new Error("microphone request cancelled"); e.name="AbortError"; e.lgGranted=true; throw e;
       }
       stream=s;
       s.getAudioTracks().forEach(t=>{ t.onended=()=>{ if(stream===s) stopAll("ended"); }; });
@@ -211,7 +216,8 @@
     }catch(e){
       if(stale(my)) return;
       const n=e&&e.name;
-      if(n==="AbortError"){ setPref("yes"); closeSheet(true); return; }   // allowed, then left the app
+      if(n==="AbortError"&&e.lgGranted){ setPref("yes"); closeSheet(true); return; }   // allowed, then left the app
+      if(n==="AbortError"){ permScreen(lastOpts); return; }                            // prompt dismissed: ask again, remember nothing
       if(n==="NotAllowedError"||n==="SecurityError"||n==="PermissionDeniedError"){ browserPerm="denied"; emit(); permScreen(lastOpts,"blocked"); }
       else if(n==="NotFoundError"||n==="DevicesNotFoundError") permScreen(lastOpts,"nomic");
       else permScreen(lastOpts,"failed");
@@ -251,7 +257,7 @@
     if(st==="ready"||pref()==="yes"&&st!=="blocked"){ setPref("off"); stopAll("off"); privacyScreen(); return; }
     const sw=document.querySelector("#micBody .micsw"); if(sw) sw.disabled=true;
     try{ audioCtx(); await getStream(); if(stale(my)) return; setPref("yes"); if(!inputs.size) stopStream(); }
-    catch(e){ if(stale(my)) return; const n=e&&e.name; if(n==="AbortError") setPref("yes"); else { if(n==="NotAllowedError"||n==="SecurityError"){ browserPerm="denied"; } setPref("notnow"); } }
+    catch(e){ if(stale(my)) return; const n=e&&e.name; if(n==="AbortError"&&e.lgGranted) setPref("yes"); else if(n==="AbortError"){ /* prompt dismissed: no change */ } else { if(n==="NotAllowedError"||n==="SecurityError"){ browserPerm="denied"; } setPref("notnow"); } }
     privacyScreen();
   }
   function closePrivacy(){

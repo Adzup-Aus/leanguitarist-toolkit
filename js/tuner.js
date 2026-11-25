@@ -189,6 +189,8 @@
 
   /* ---------- listening ---------- */
   async function listen(){
+    /* Start the sound engine inside the tap itself: iPhones allow it only there. */
+    if(typeof ensureAudio==="function") try{ensureAudio()}catch(e){}
     if(st.starting||st.listening) return;
     st.starting=true;
     try{ await startListening(); } finally { st.starting=false; if(st.open&&!st.listening) renderMode(); }
@@ -311,6 +313,7 @@
 
   function openTuner(){
     if(typeof seqStop==="function") try{seqStop()}catch(e){}
+    if(typeof paStop==="function"&&typeof pa!=="undefined"&&pa.playing) try{paStop()}catch(e){}   // F7 play-along: the tuner must not hear it
     const el=build(); st.open=true; st.opener=document.activeElement;
     st.done={}; st.hist=[]; st.paused=false; st.inTuneSince=0; st.shown=null;   // a fresh tuning each time
     el.classList.add("show"); document.documentElement.classList.add("tnlock");
