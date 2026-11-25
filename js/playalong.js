@@ -88,13 +88,24 @@ const PA_GROOVES={
 };
 
 /* ---------- state ---------- */
-let paBus=null;
-let pa={open:false,song:null,chords:[],groove:null,pat:null,bpm:80,playing:false,unsub:null,parts:{drums:true,bass:true,guide:true},countIn:true,uiTimers:[]};
+let paBus=null;   /* this run's buses; every note of a run goes through them */
+let paRun=null;   /* this run's output gain: buses -> paRun -> master */
+let pa={open:false,song:null,chords:[],groove:null,pat:null,bpm:80,playing:false,unsub:null,parts:{drums:true,bass:true,guide:true},countIn:true,runCount:8,uiTimers:[]};
+/* a fresh set of buses and a fresh run gain for each Play, so Stop can silence notes already
+   scheduled (ramp the run gain to 0, then disconnect it) without touching the next run */
 function paBuses(){
-  if(paBus) return; ensureAudio();
+  ensureAudio();
+  paRun=ctx.createGain(); paRun.gain.value=1; paRun.connect(master);
   paBus={drums:ctx.createGain(),bass:ctx.createGain(),guide:ctx.createGain(),click:ctx.createGain()};
-  paBus.drums.gain.value=0.75; paBus.bass.gain.value=0.9; paBus.guide.gain.value=0.55; paBus.click.gain.value=0.8;
-  Object.values(paBus).forEach(b=>b.connect(master));
+  paBus.drums.gain.value=pa.parts.drums?0.75:0; paBus.bass.gain.value=pa.parts.bass?0.9:0;
+  paBus.guide.gain.value=pa.parts.guide?0.55:0; paBus.click.gain.value=0.8;
+  Object.values(paBus).forEach(b=>b.connect(paRun));
+}
+function paSilenceRun(){
+  if(!paRun) return; const g=paRun, r=ctx.currentTime;
+  g.gain.cancelScheduledValues(r); g.gain.setValueAtTime(g.gain.value,r); g.gain.linearRampToValueAtTime(0,r+0.02);
+  setTimeout(()=>{ try{ g.disconnect(); }catch(e){} },80);
+  paRun=null;
 }
 function paSetParts(){ if(!paBus) return; const r=ctx.currentTime;
   paBus.drums.gain.setTargetAtTime(pa.parts.drums?0.75:0,r,0.02);
@@ -111,7 +122,7 @@ function paGuide(t,chord,dir){
 
 /* one eighth-note step of the loop */
 function paTick(t,step){
-  const COUNT=pa.countIn?8:0; /* a one-bar count-in: 4 clicks */
+  const COUNT=pa.runCount; /* a one-bar count-in (4 clicks), fixed when Play was pressed */
   if(step<COUNT){ if(step%2===0){ paCount(t,step===0); paUi(t,{count:4-step/2}); } return; }
   const s=step-COUNT, i=s%8, bar=Math.floor(s/8), ci=bar%pa.chords.length, chord=pa.chords[ci];
   const g=pa.groove, sd=60/pa.bpm/2;
@@ -120,7 +131,7 @@ function paTick(t,step){
   if(g.r&&g.r[i]==="x") paRim(t,1);
   if(g.h&&g.h[i]==="x") paHat(t,i%2?0.7:1);
   if(g.z&&g.z[i]==="x") paShaker(t,i%2?0.7:1);
-  const b=g.bass[i]; if(b==="R"||b==="F") paBass(t,chord,sd*g.blen*0.95,b==="F",i===0?1:0.85);
+  const b=g.bass[i]; if(b==="R"||b==="F") paBass(t,chord,sd*Math.min(g.blen,8-i)*0.95,b==="F",i===0?1:0.85); /* never past the bar line */
   const d=pa.pat.steps[i]; if(d==="D"||d==="U") paGuide(t,chord,d);
   if(i%2===0) paUi(t,{ci:ci,beat:i/2,bar:bar});
 }
@@ -147,13 +158,13 @@ function paMark(ci,beat){
 function paPlay(){
   if(pa.playing) return;
   seqStop(); document.querySelectorAll(".play.playing").forEach(b=>{b.classList.remove("playing");b.innerHTML=PLAY_SVG;});
-  paBuses(); paSetParts();
+  paBuses(); pa.runCount=pa.countIn?8:0;
   const clk=paClock(); pa.unsub=clk.onTick(paTick); clk.start({bpm:pa.bpm,subdivision:2});
   pa.playing=true; paButtons();
 }
 function paStop(){
   const clk=paClock(); if(pa.unsub){ pa.unsub(); pa.unsub=null; } if(pa.playing) clk.stop();
-  pa.uiTimers.forEach(clearTimeout); pa.uiTimers=[];
+  pa.uiTimers.forEach(clearTimeout); pa.uiTimers=[]; paSilenceRun();
   pa.playing=false; paButtons(); paMark(-1,-1);
   const st=document.getElementById("paStatus"); if(st) st.textContent="Stopped";
 }
