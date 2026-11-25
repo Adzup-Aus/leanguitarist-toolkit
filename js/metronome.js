@@ -25,13 +25,16 @@
     clock = LGClock.create({
       bpm: st.bpm, beatsPerBar: st.beats, subdivision: st.strum ? 2 : 1,
       onSchedule(t){
-        if (t.sub === 0) LGClock.click(t.time, t.beat === 0 && st.accent ? "accent" : "beat");
+        if (t.sub === 0) LGClock.click(t.time, t.beat === 0 && st.accent ? "accent" : "beat", clock.output);
         const p = pattern();
-        if (p) {
-          const step = p.steps[t.index % p.steps.length];
-          if (step === "D") strum(st.chord, "down", t.time, 0.7);
-          else if (step === "U") strum(st.chord, "up", t.time, 0.6);
-          else if (step === "x") chuck(t.time);
+        if (p && clock.subdivision === 2) {
+          // eighth notes counted from the start of the bar, so the pattern lines up with beat 1
+          const step = p.steps[((t.bar * clock.beatsPerBar + t.beat) * 2 + t.sub) % p.steps.length];
+          clock.withOutput(() => {   // so Stop silences strums already booked
+            if (step === "D") strum(st.chord, "down", t.time, 0.7);
+            else if (step === "U") strum(st.chord, "up", t.time, 0.6);
+            else if (step === "x") chuck(t.time);
+          });
         }
       },
       onTick(t){
@@ -96,11 +99,9 @@
   }
 
   function setStrum(id){
-    const was = clock && clock.running;
     st.strum = id; save();
-    if (clock) { clock.stop(); clock = null; }   // the strum needs eighth notes: start a fresh clock in time
+    if (clock) clock.setSubdivision(id ? 2 : 1);   // eighths for a strum; changes on the next beat, the beat keeps its place
     renderChips();
-    if (was) start();
   }
   function setBpm(n){
     st.bpm = clampBpm(n);

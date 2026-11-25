@@ -2,16 +2,17 @@
    play-along (F7) and the live coach (F8).
 
    Timing is done by the Web Audio clock, not by setTimeout: a light timer
-   (in a Web Worker where possible, so a busy page or a background tab does not
-   slow it) wakes every 25 ms and books every tick that falls in the next
-   120 ms at its exact audio time. Sounds are started at tick.time, so they land
+   (in a Web Worker where possible, so a background tab does not slow it)
+   wakes every 25 ms and books every tick that falls in the next 250 ms at its
+   exact audio time. Sounds are started at tick.time, so they land
    on the sample whatever the page is doing.
 
    const clock = LGClock.create({
      bpm: 90,            // beats a minute (20 to 300)
      beatsPerBar: 4,     // beats in a bar
      subdivision: 1,     // ticks per beat (2 = eighth notes, 4 = sixteenths)
-     onSchedule(tick){}, // called ahead of time: start sounds at tick.time
+     onSchedule(tick){}, // called ahead of time: start sounds at tick.time, into
+                         // clock.output (or inside clock.withOutput) so Stop silences them
      onTick(tick){}      // called on screen at about tick.time: move the lights
    });
    tick = { time,      // AudioContext time in seconds
@@ -22,9 +23,12 @@
             downbeat,  // true on beat 0, sub 0
             bpm }
    clock.start()                 starts about 60 ms from now; returns the first tick's time
-   clock.stop()
+   clock.stop()                  stops booking and silences sounds already booked into clock.output
+   clock.output                  this run's GainNode (into the app's master); null when stopped
+   clock.withOutput(fn)          runs fn with core.js's `master` pointed at clock.output, so
+                                 strum(), pluck() and chuck() booked in fn are silenced by Stop too
    clock.setBpm(n)               takes effect from the next tick, with no jump
-   clock.setBeatsPerBar(n), clock.setSubdivision(n)
+   clock.setBeatsPerBar(n), clock.setSubdivision(n) (takes effect on the next beat, so the beat never moves)
    clock.running, clock.bpm, clock.beatsPerBar, clock.subdivision
    clock.context                 the AudioContext (the app's shared one from core.js)
    clock.secondsPerTick()
@@ -32,10 +36,10 @@
    clock.nearest(audioTime)      nearest booked tick: { tick, offset } (offset in
                                  seconds, negative = early), for measuring a strum
    LGClock.now()                 the shared AudioContext's current time
-   LGClock.click(time, kind)     a metronome click at time: "accent", "beat" or "sub"
+   LGClock.click(time, kind, dest)  a metronome click at time: "accent", "beat" or "sub", into dest
 */
 (function(){
-  const LOOKAHEAD = 0.12;   // seconds of ticks booked ahead
+  const LOOKAHEAD = 0.25;   // seconds of ticks booked ahead: rides out a busy page for up to about 0.2 s
   const WAKE_MS = 25;       // how often the scheduler wakes
   const START_DELAY = 0.06; // first tick this far after start()
   const HISTORY = 128;      // booked ticks kept for nearest()
@@ -77,7 +81,7 @@
       beatsPerBar: Math.round(clamp(opts.beatsPerBar, 1, 16, 4)),
       subdivision: Math.round(clamp(opts.subdivision, 1, 8, 1)),
       running: false, next: 0, index: 0, beat: 0, sub: 0, bar: 0,
-      queue: [], history: [], raf: 0
+      queue: [], history: [], raf: 0, pendingSub: 0, out: null
     };
     let c = null;   // the AudioContext, taken on start() so no sound is set up before a tap
 
@@ -93,6 +97,7 @@
         st.next += skip * spt();
       }
       while (st.next < until) {
+        if (st.pendingSub && st.sub === 0) { st.subdivision = st.pendingSub; st.pendingSub = 0; }
         const t = { time: st.next, index: st.index, beat: st.beat, bar: st.bar, sub: st.sub,
                     downbeat: st.beat === 0 && st.sub === 0, bpm: st.bpm };
         st.history.push(t); if (st.history.length > HISTORY) st.history.shift();
@@ -125,6 +130,7 @@
         if (st.running) clock.stop();
         c = audioContext();
         st.running = true; st.index = 0; st.beat = 0; st.sub = 0; st.bar = 0; st.queue = []; st.history = [];
+        st.out = c.createGain(); st.out.connect(outNode(c));
         st.next = c.currentTime + START_DELAY;
         const first = st.next;
         wakers.add(book); startTimer(); book();
@@ -134,11 +140,29 @@
       stop(){
         st.running = false; wakers.delete(book); stopTimer();
         if (st.raf) cancelAnimationFrame(st.raf); st.raf = 0; st.queue = [];
+        if (st.pendingSub) { st.subdivision = st.pendingSub; st.pendingSub = 0; }
+        const out = st.out; st.out = null;
+        if (out) {   // silence anything already booked for this run, then let it go
+          const now = out.context.currentTime;
+          out.gain.cancelScheduledValues(now); out.gain.setValueAtTime(out.gain.value, now);
+          out.gain.linearRampToValueAtTime(0, now + 0.01);
+          setTimeout(() => { try { out.disconnect(); } catch (e) {} }, 400);
+        }
+      },
+      get output(){ return st.out; },
+      withOutput(fn){
+        if (!st.out || typeof master === "undefined") return fn();
+        const keep = master; master = st.out;   // core.js sounds play into master
+        try { return fn(); } finally { master = keep; }
       },
       now(){ return (c || audioContext()).currentTime; },
       setBpm(n){ st.bpm = clamp(n, 20, 300, st.bpm); },
       setBeatsPerBar(n){ st.beatsPerBar = Math.round(clamp(n, 1, 16, st.beatsPerBar)); if (st.beat >= st.beatsPerBar) st.beat = 0; },
-      setSubdivision(n){ st.subdivision = Math.round(clamp(n, 1, 8, st.subdivision)); st.sub = 0; },
+      setSubdivision(n){
+        n = Math.round(clamp(n, 1, 8, st.subdivision));
+        if (st.running) st.pendingSub = n === st.subdivision ? 0 : n;   // from the next beat
+        else { st.subdivision = n; st.sub = 0; }
+      },
       nearest(time){
         let best = null;
         for (const t of st.history) if (!best || Math.abs(t.time - time) < Math.abs(best.time - time)) best = t;
@@ -149,7 +173,7 @@
   }
 
   /* A short, sharp click. Accent is higher and louder. */
-  function click(time, kind){
+  function click(time, kind, dest){
     const c = audioContext(); time = time || c.currentTime;
     const f = kind === "accent" ? 1760 : kind === "sub" ? 880 : 1175;
     const v = kind === "accent" ? 0.55 : kind === "sub" ? 0.16 : 0.38;
@@ -158,7 +182,7 @@
     const g = c.createGain();
     g.gain.setValueAtTime(0, time); g.gain.linearRampToValueAtTime(v, time + 0.0015);
     g.gain.exponentialRampToValueAtTime(0.0008, time + 0.045);
-    o.connect(bp).connect(g).connect(outNode(c));
+    o.connect(bp).connect(g).connect(dest || outNode(c));
     o.start(time); o.stop(time + 0.06);
   }
 

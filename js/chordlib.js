@@ -34,6 +34,7 @@ const CHORD_LIB = {
   Em7:  { frets:[0,2,2,0,3,0],          fingers:[0,2,3,0,4,0] },
   Dm7:  { frets:[null,null,0,2,1,1],    fingers:[0,0,0,2,1,1], barre:{ fret:1, from:4, to:5 } },
   Cmaj7:{ frets:[null,3,2,0,0,0],       fingers:[0,3,2,0,0,0] },
+  Amaj7:{ frets:[null,0,2,1,2,0],       fingers:[0,0,2,1,3,0] },
   Fmaj7:{ frets:[null,null,3,2,1,0],    fingers:[0,0,3,2,1,0] },
   Cadd9:{ frets:[null,3,2,0,3,3],       fingers:[0,2,1,0,3,4] },
   Asus2:{ frets:[null,0,2,2,0,0],       fingers:[0,0,1,2,0,0] },
