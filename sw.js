@@ -1,6 +1,6 @@
 /* Core Chord Formula Toolkit - offline service worker */
 /* NOTE: bump CACHE on every deploy that changes a precached asset. */
-const CACHE = "ccf-toolkit-v9";
+const CACHE = "ccf-toolkit-v10";
 
 /* App shell. index.html and the app's own scripts and styles are network-first
    (see below) so deploys reach returning users immediately; these are the
@@ -9,6 +9,7 @@ const ASSETS = [
   "./",
   "./index.html",
   "./css/app.css",
+  "./css/f7.css",
   "./js/ops.js",
   "./js/data.js",
   "./js/core.js",
@@ -21,6 +22,7 @@ const ASSETS = [
   "./js/ready.js",
   "./js/account.js",
   "./js/reminders.js",
+  "./js/playalong.js",
   "./js/main.js",
   "./manifest.webmanifest",
   "./icon-192.png",

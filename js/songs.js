@@ -36,7 +36,7 @@ function renderSongs(){
         <div class="t">${esc(s.title)}</div>
         <div class="a">${esc(s.artist)}</div>
         <div class="row2">${badges}<button class="strumtag" onclick="goPattern('${s.strum}')">${s.strum} strum</button></div>
-        <div style="margin-top:6px"><a class="lyriclink" href="${lyr}" target="_blank" rel="noopener">Find chords &amp; lyrics &#8599;</a></div>
+        <div style="margin-top:6px"><a class="lyriclink" href="${lyr}" target="_blank" rel="noopener">Find chords &amp; lyrics &#8599;</a><button class="palink" data-k="${encodeURIComponent(k)}" onclick="openPlayAlong(this.dataset.k)">&#9654; Play along</button></div>
       </div>
       <div class="acts"><button class="star ${starred?'on':''}" onclick="toggleStar('${encodeURIComponent(k)}',this)" aria-label="Star">&#9733;</button></div>
     </div>`;
