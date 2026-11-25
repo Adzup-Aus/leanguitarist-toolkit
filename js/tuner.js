@@ -210,7 +210,7 @@
     if(st.input.ctx.state!=="running"){ try{await st.input.ctx.resume()}catch(e){} }
     if(st.input.ctx.state!=="running"){ st.input.close(); st.input=null; st.paused=true; renderAll("Tap to start listening."); return; }
     st.buf=new Float32Array(st.input.analyser.fftSize);
-    st.listening=true; st.hist=[]; st.lastHeard=0; st.inTuneSince=0;
+    st.listening=true; st.auto=true; st.hist=[]; st.lastHeard=0; st.inTuneSince=0;
     renderAll(); loop();
   }
   function stopListening(msg){
@@ -312,6 +312,7 @@
     if(st.opener&&st.opener.focus) try{st.opener.focus({preventScroll:true})}catch(e){}
   }
   window.addEventListener("popstate",()=>{ if(st.open&&location.hash!=="#tuner") closeTuner(true); });
+  window.addEventListener("hashchange",()=>{ if(!st.open&&location.hash==="#tuner") openTuner(); });
   LGMic.onChange(()=>{ if(st.open&&!st.listening) renderMode(); });
 
   Object.assign(api,{open:openTuner,close:closeTuner,listen,stopListening:()=>stopListening(),pick,setInst,setAuto});
