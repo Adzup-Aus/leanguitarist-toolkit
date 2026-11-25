@@ -65,7 +65,8 @@ No sound is stored in Supabase. Takes the player keeps stay on their device.
 
 ## 5. Features, one session each
 
-Each row is one build session, done in order, one at a time. A session builds only its row.
+Each row is one build session. Features run in parallel in waves (below): the main session
+starts every feature whose prerequisite features are already live. A session builds only its row.
 
 | # | Feature | Done means (tested on the Netlify preview of its pull request) |
 |---|---|---|
@@ -83,6 +84,19 @@ Each row is one build session, done in order, one at a time. A session builds on
 | F11 | Teacher review: "Send this take to a teacher" opens the GHL checkout; after payment and a yes, n8n sends the take to the teacher | Test purchase in GHL test mode; the take reaches the teacher; the purchase is logged for delivery. Waits on the price |
 | F12 | String-by-string chord check, and the drill counting changes by ear (beta) | Finds a muted string on a real guitar |
 | Later | Camera, as its own opt-in | After a privacy and legal check |
+
+### Waves
+
+Set 25 November 2026 (Cliff: "build out the maximum number of parallel sessions… speed up the
+process of launch"). A feature starts once every feature named after it is live.
+
+- **Wave 1:** F3, F4, F5, F7, and the free-tier plan.
+- **Wave 2:** F6 (after F3 and F5), F10 (after F4), F8 (after F4 and F5), F12 (after F4), and
+  the free-tier build (after Cliff's yes to the plan and the sign-in gate going live).
+- **Wave 3:** F9 (after F6 and F8), F11 (after F10, the paid tier and a legal check).
+
+**Launch** is the sign-in gate, F3, F4, F5, F6, F7, F10 and the free tier. F8, F9, F11 and F12
+follow as improvements after launch.
 
 While the app is free, features go live without the legal check (Cliff, 20 November 2026: no
 one is paying for it, keep building). The check runs before the app is charged for, and before
@@ -193,11 +207,23 @@ Each session updates its own row when it ends.
 - **It stops when the feature is done.** Anything unrelated it finds goes into the tracker's
   Notes for a later session. If a session gets long before its feature is done, it writes where
   it got to in the tracker and hands over to a fresh session.
-- **One at a time.** The main session starts the next feature only after the previous one is
-  merged and checked on the live app, because the features share the same files.
-- **Every session reports up the chain** (Cliff, 20 November 2026). A fix session reports to
-  its stage session; each stage session reports to the build's main session. Cliff watches
-  only the main session.
+- **In parallel, when the files don't overlap** (Cliff, 25 November 2026). The main session
+  starts every feature whose prerequisite features are already live (the waves in section 5).
+  Each session works in its own worktree, on its own branch and its own Netlify preview.
+- **New files, not shared ones.** Each feature puts its code in `js/<feature>.js` and its
+  styles in `css/<feature>.css`. It changes the shared files (`index.html`, `css/app.css`,
+  `sw.js`, `js/main.js`, `js/data.js`) by as few lines as possible.
+- **The merge queue.** When a feature has passed its tests, the outside check and Cliff's
+  review, it brings its branch up to date with `main` and, if any shared file changed, runs its
+  "done means" test again on the new preview. Then it sets the `sw.js` cache version to one
+  more than the one on `main` at that moment (never earlier, and never set on the branch
+  beforehand), merges, and checks the live app. If two are ready together, the first to finish
+  its re-test merges first; the other brings its branch up to date again.
+- **Own row only.** Each session edits only its own row of the build tracker (section 6).
+- **Every session reports up the chain** (Cliff, 20 November 2026). Each session reports to
+  the session that started it, and that session reports to the main session: a fix session to
+  its stage session, each stage session to the build's main session. Cliff watches only the
+  main session.
 - **The main session only orchestrates** (Cliff, 20 November 2026). It starts sessions, checks
   what they report (pull request, preview, live app), brings Cliff decisions and keeps the plan
   page current. It does no build or setup work itself: Supabase, n8n, GHL, Resend and legal
