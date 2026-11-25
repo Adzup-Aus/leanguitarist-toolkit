@@ -4,8 +4,8 @@
    its strum style from js/data.js. Each chord lasts one bar of 4 beats, as on the Songs tab.
 
    Timing: a look-ahead scheduler on the audio clock, eighth-note steps. It sits behind a small
-   clock interface (start/stop/setBpm/onTick) so F5's shared clock (js/clock.js, LGClock) can
-   replace it: paClock() uses window.LGClock when it offers that interface. */
+   clock interface (start/stop/setBpm/onTick); paClock() uses F5's shared clock (js/clock.js,
+   LGClock.create) through an adapter when it is loaded, and this scheduler otherwise. */
 
 /* ---------- clock (fallback until js/clock.js lands) ---------- */
 const PAFallbackClock=(function(){
@@ -27,9 +27,25 @@ const PAFallbackClock=(function(){
     onTick(fn){ subs.push(fn); return ()=>{ subs=subs.filter(f=>f!==fn); }; }
   };
 })();
+/* F5's shared clock (js/clock.js): LGClock.create({bpm, beatsPerBar, subdivision, onSchedule})
+   returns a clock with start/stop/setBpm/running; onSchedule(tick) gets {time, index, ...}.
+   This adapter gives it the same shape as PAFallbackClock. */
+let paLGAdapter=null;
+function paMakeLGAdapter(){
+  let clock=null, subs=[];
+  return {
+    start(o){ o=o||{}; this.stop();
+      clock=LGClock.create({bpm:o.bpm||80, beatsPerBar:4, subdivision:o.subdivision||2,
+        onSchedule:t=>{ subs.slice().forEach(fn=>{ try{ fn(t.time,t.index); }catch(e){ if(window.LGOps&&LGOps.logError) LGOps.logError("playalong tick",e); } }); }});
+      clock.start(); },
+    stop(){ if(clock){ clock.stop(); clock=null; } },
+    setBpm(n){ if(clock) clock.setBpm(n); },
+    isRunning(){ return !!(clock&&clock.running); },
+    onTick(fn){ subs.push(fn); return ()=>{ subs=subs.filter(f=>f!==fn); }; }
+  };
+}
 function paClock(){
-  const c=window.LGClock;
-  if(c&&typeof c.start==="function"&&typeof c.stop==="function"&&typeof c.onTick==="function"&&typeof c.setBpm==="function") return c;
+  if(typeof LGClock!=="undefined"&&LGClock&&typeof LGClock.create==="function") return paLGAdapter||(paLGAdapter=paMakeLGAdapter());
   return PAFallbackClock;
 }
 
